@@ -2,15 +2,13 @@ package com.enterprise.vpn.model
 
 import android.os.Parcel
 import android.os.Parcelable
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
+import org.json.JSONObject
 import java.net.InetAddress
 
 /**
  * VPN Server Configuration
  * Contains all details needed to connect to external VPN server
  */
-@Serializable
 data class VpnServerConfig(
     val id: String = "",
     val name: String = "",
@@ -67,14 +65,45 @@ data class VpnServerConfig(
         
         fun fromJson(json: String): VpnServerConfig {
             return try {
-                Json { ignoreUnknownKeys = true }.decodeFromString(json)
+                val obj = JSONObject(json)
+                VpnServerConfig(
+                    id = obj.optString("id", ""),
+                    name = obj.optString("name", ""),
+                    serverIp = obj.optString("serverIp", ""),
+                    port = obj.optInt("port", 443),
+                    protocol = obj.optString("protocol", "TCP"),
+                    username = obj.optString("username", ""),
+                    password = obj.optString("password", "")
+                )
             } catch (e: Exception) {
                 VpnServerConfig()
             }
         }
+        
+        fun fromMap(map: Map<String, Any?>): VpnServerConfig {
+            return VpnServerConfig(
+                id = map["id"] as? String ?: "",
+                name = map["name"] as? String ?: "",
+                serverIp = map["serverIp"] as? String ?: "",
+                port = (map["port"] as? Number)?.toInt() ?: 443,
+                protocol = map["protocol"] as? String ?: "TCP",
+                username = map["username"] as? String ?: "",
+                password = map["password"] as? String ?: ""
+            )
+        }
     }
 
-    fun toJson(): String = Json.encodeToString(this)
+    fun toJson(): String {
+        return JSONObject().apply {
+            put("id", id)
+            put("name", name)
+            put("serverIp", serverIp)
+            put("port", port)
+            put("protocol", protocol)
+            put("username", username)
+            put("password", password)
+        }.toString()
+    }
 
     fun getInetAddress(): InetAddress? {
         return try {
@@ -92,7 +121,6 @@ data class VpnServerConfig(
 /**
  * HTTP Header for custom header injection
  */
-@Serializable
 data class HttpHeader(
     val name: String,
     val value: String,
@@ -122,7 +150,6 @@ data class HttpHeader(
 /**
  * SNI Configuration for TLS connections
  */
-@Serializable
 data class SniConfig(
     val serverName: String = "",
     val enabled: Boolean = true,
@@ -152,7 +179,6 @@ data class SniConfig(
 /**
  * Complete VPN Configuration
  */
-@Serializable
 data class VpnConfig(
     val server: VpnServerConfig? = null,
     val httpHeaders: List<HttpHeader> = emptyList(),
@@ -204,15 +230,7 @@ data class VpnConfig(
         fun fromMap(map: Map<String, Any?>): VpnConfig {
             val serverMap = map["server"] as? Map<String, Any?>
             val server = if (serverMap != null) {
-                VpnServerConfig(
-                    id = serverMap["id"] as? String ?: "",
-                    name = serverMap["name"] as? String ?: "",
-                    serverIp = serverMap["serverIp"] as? String ?: "",
-                    port = (serverMap["port"] as? Number)?.toInt() ?: 443,
-                    protocol = serverMap["protocol"] as? String ?: "TCP",
-                    username = serverMap["username"] as? String ?: "",
-                    password = serverMap["password"] as? String ?: ""
-                )
+                VpnServerConfig.fromMap(serverMap)
             } else null
 
             val headersList = (map["httpHeaders"] as? List<Map<String, Any?>>)?.map {
@@ -249,14 +267,59 @@ data class VpnConfig(
 
         fun fromJson(json: String): VpnConfig {
             return try {
-                Json { ignoreUnknownKeys = true }.decodeFromString(json)
+                val obj = JSONObject(json)
+                val serverObj = obj.optJSONObject("server")
+                val server = if (serverObj != null) VpnServerConfig.fromJson(serverObj.toString()) else null
+                
+                val headersArray = obj.optJSONArray("httpHeaders")
+                val headers = if (headersArray != null) {
+                    (0 until headersArray.length()).map { i ->
+                        val h = headersArray.getJSONObject(i)
+                        HttpHeader(
+                            name = h.optString("name", ""),
+                            value = h.optString("value", ""),
+                            enabled = h.optBoolean("enabled", true)
+                        )
+                    }
+                } else emptyList()
+                
+                val sniObj = obj.optJSONObject("sniConfig")
+                val sniConfig = if (sniObj != null) {
+                    SniConfig(
+                        serverName = sniObj.optString("serverName", ""),
+                        enabled = sniObj.optBoolean("enabled", true),
+                        allowOverride = sniObj.optBoolean("allowOverride", false)
+                    )
+                } else null
+                
+                VpnConfig(
+                    server = server,
+                    httpHeaders = headers,
+                    sniConfig = sniConfig,
+                    autoConnect = obj.optBoolean("autoConnect", false),
+                    killSwitch = obj.optBoolean("killSwitch", false),
+                    dnsLeakProtection = obj.optBoolean("dnsLeakProtection", true),
+                    ipv6Enabled = obj.optBoolean("ipv6Enabled", false),
+                    splitTunnelEnabled = obj.optBoolean("splitTunnelEnabled", false),
+                    mtu = obj.optInt("mtu", 1500)
+                )
             } catch (e: Exception) {
                 VpnConfig()
             }
         }
     }
 
-    fun toJson(): String = Json.encodeToString(this)
+    fun toJson(): String {
+        return JSONObject().apply {
+            put("server", server?.toJson())
+            put("autoConnect", autoConnect)
+            put("killSwitch", killSwitch)
+            put("dnsLeakProtection", dnsLeakProtection)
+            put("ipv6Enabled", ipv6Enabled)
+            put("mtu", mtu)
+        }.toString()
+    }
+    
     fun isValid(): Boolean = server != null && server!!.isValid()
     val enabledHeaders: List<HttpHeader> get() = httpHeaders.filter { it.enabled }
 }
@@ -312,8 +375,6 @@ data class VpnStatus(
         "localIp" to localIp,
         "remoteIp" to remoteIp
     )
-
-    fun toJson(): String = Json.encodeToString(serializer(), this)
 }
 
 /**
@@ -382,3 +443,11 @@ data class ConnectionResult(
         "errorCode" to errorCode
     )
 }
+
+/**
+ * Custom exception for VPN connection errors
+ */
+class VpnConnectionException(
+    message: String,
+    val errorCode: String? = null
+) : Exception(message)
