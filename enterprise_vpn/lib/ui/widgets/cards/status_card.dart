@@ -27,8 +27,8 @@ class StatusCard extends StatelessWidget {
         boxShadow: [
           BoxShadow(
             color: isDark
-                ? Colors.black.withValues(alpha: 0.3)
-                : Colors.black.withValues(alpha: 0.05),
+                ? Colors.black.withAlpha(80)
+                : Colors.black.withAlpha(15),
             blurRadius: 20,
             offset: const Offset(0, 4),
           ),
@@ -102,12 +102,14 @@ class StatusCard extends StatelessWidget {
     VpnConnectionState state,
     bool isDark,
   ) {
-    final (color, text) = _getStatusBadgeInfo(state);
+    final badgeInfo = _getStatusBadgeInfo(state);
+    final color = badgeInfo['color'] as Color;
+    final text = badgeInfo['text'] as String;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
+        color: color.withAlpha(40),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
@@ -121,7 +123,7 @@ class StatusCard extends StatelessWidget {
               shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(
-                  color: color.withValues(alpha: 0.5),
+                  color: color.withAlpha(128),
                   blurRadius: 4,
                   spreadRadius: 1,
                 ),
@@ -220,7 +222,7 @@ class StatusCard extends StatelessWidget {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: AppTheme.primaryColor.withValues(alpha: 0.1),
+              color: AppTheme.primaryColor.withAlpha(25),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(
@@ -261,7 +263,7 @@ class StatusCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
-                color: AppTheme.secondaryColor.withValues(alpha: 0.1),
+                color: AppTheme.secondaryColor.withAlpha(25),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
@@ -277,25 +279,25 @@ class StatusCard extends StatelessWidget {
     );
   }
 
-  (Color, String) _getStatusBadgeInfo(VpnConnectionState state) {
+  Map<String, dynamic> _getStatusBadgeInfo(VpnConnectionState state) {
     switch (state) {
       case VpnConnectionState.connected:
-        return (AppTheme.statusConnected, 'Connected');
+        return {'color': AppTheme.statusConnected, 'text': 'Connected'};
       case VpnConnectionState.connecting:
-        return (AppTheme.statusConnecting, 'Connecting');
+        return {'color': AppTheme.statusConnecting, 'text': 'Connecting'};
       case VpnConnectionState.disconnecting:
-        return (AppTheme.statusConnecting, 'Disconnecting');
+        return {'color': AppTheme.statusConnecting, 'text': 'Disconnecting'};
       case VpnConnectionState.reconnecting:
-        return (AppTheme.statusConnecting, 'Reconnecting');
+        return {'color': AppTheme.statusConnecting, 'text': 'Reconnecting'};
       case VpnConnectionState.authenticating:
-        return (AppTheme.statusConnecting, 'Auth');
+        return {'color': AppTheme.statusConnecting, 'text': 'Auth'};
       case VpnConnectionState.error:
-        return (AppTheme.statusError, 'Error');
+        return {'color': AppTheme.statusError, 'text': 'Error'};
       case VpnConnectionState.noNetwork:
-        return (AppTheme.statusError, 'No Network');
+        return {'color': AppTheme.statusError, 'text': 'No Network'};
       case VpnConnectionState.disconnected:
       default:
-        return (AppTheme.statusDisconnected, 'Disconnected');
+        return {'color': AppTheme.statusDisconnected, 'text': 'Disconnected'};
     }
   }
 }

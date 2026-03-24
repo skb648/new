@@ -220,7 +220,6 @@ class _AdvancedConfigSheetState extends State<AdvancedConfigSheet>
       initialChildSize: 0.85,
       minChildSize: 0.5,
       maxChildSize: 0.95,
-      controller: _scrollController,
       builder: (context, scrollController) {
         return Container(
           decoration: BoxDecoration(
@@ -639,7 +638,7 @@ class _AdvancedConfigSheetState extends State<AdvancedConfigSheet>
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: AppTheme.info.withValues(alpha: 0.1),
+              color: AppTheme.info.withAlpha(25),
               borderRadius: BorderRadius.circular(16),
             ),
             child: Row(
@@ -880,7 +879,7 @@ class _AdvancedConfigSheetState extends State<AdvancedConfigSheet>
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: AppTheme.info.withValues(alpha: 0.1),
+              color: AppTheme.info.withAlpha(25),
               borderRadius: BorderRadius.circular(16),
             ),
             child: Row(

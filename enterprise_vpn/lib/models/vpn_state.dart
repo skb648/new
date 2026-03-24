@@ -116,6 +116,11 @@ class VpnStatus extends Equatable {
   /// Remote public IP
   final String? remoteIp;
 
+  /// Create initial/disconnected state
+  factory VpnStatus.initial() => const VpnStatus(
+    state: VpnConnectionState.disconnected,
+  );
+
   /// Create a copy with updated values
   VpnStatus copyWith({
     VpnConnectionState? state,
@@ -133,6 +138,8 @@ class VpnStatus extends Equatable {
     String? errorMessage,
     String? localIp,
     String? remoteIp,
+    bool clearError = false,
+    bool clearConnectedAt = false,
   }) {
     return VpnStatus(
       state: state ?? this.state,
@@ -140,14 +147,14 @@ class VpnStatus extends Equatable {
       serverIp: serverIp ?? this.serverIp,
       serverPort: serverPort ?? this.serverPort,
       protocol: protocol ?? this.protocol,
-      connectedAt: connectedAt ?? this.connectedAt,
+      connectedAt: clearConnectedAt ? null : (connectedAt ?? this.connectedAt),
       duration: duration ?? this.duration,
       bytesIn: bytesIn ?? this.bytesIn,
       bytesOut: bytesOut ?? this.bytesOut,
       currentSpeedDown: currentSpeedDown ?? this.currentSpeedDown,
       currentSpeedUp: currentSpeedUp ?? this.currentSpeedUp,
       latency: latency ?? this.latency,
-      errorMessage: errorMessage ?? this.errorMessage,
+      errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
       localIp: localIp ?? this.localIp,
       remoteIp: remoteIp ?? this.remoteIp,
     );
@@ -200,10 +207,54 @@ class VpnStatus extends Equatable {
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
   }
 
-  /// Initial state
-  factory VpnStatus.initial() => const VpnStatus(
-        state: VpnConnectionState.disconnected,
-      );
+  /// Convert to map for serialization
+  Map<String, dynamic> toMap() {
+    return {
+      'state': state.name,
+      'serverName': serverName,
+      'serverIp': serverIp,
+      'serverPort': serverPort,
+      'protocol': protocol,
+      'connectedAt': connectedAt?.toIso8601String(),
+      'duration': duration.inSeconds,
+      'bytesIn': bytesIn,
+      'bytesOut': bytesOut,
+      'currentSpeedDown': currentSpeedDown,
+      'currentSpeedUp': currentSpeedUp,
+      'latency': latency,
+      'errorMessage': errorMessage,
+      'localIp': localIp,
+      'remoteIp': remoteIp,
+    };
+  }
+
+  /// Create from map
+  factory VpnStatus.fromMap(Map<String, dynamic> map) {
+    return VpnStatus(
+      state: VpnConnectionState.values.firstWhere(
+        (s) => s.name == map['state'],
+        orElse: () => VpnConnectionState.disconnected,
+      ),
+      serverName: map['serverName'] as String?,
+      serverIp: map['serverIp'] as String?,
+      serverPort: map['serverPort'] as int?,
+      protocol: map['protocol'] as String?,
+      connectedAt: map['connectedAt'] != null
+          ? DateTime.tryParse(map['connectedAt'] as String)
+          : null,
+      duration: map['duration'] != null
+          ? Duration(seconds: (map['duration'] as num).toInt())
+          : Duration.zero,
+      bytesIn: (map['bytesIn'] as num?)?.toInt() ?? 0,
+      bytesOut: (map['bytesOut'] as num?)?.toInt() ?? 0,
+      currentSpeedDown: (map['currentSpeedDown'] as num?)?.toInt() ?? 0,
+      currentSpeedUp: (map['currentSpeedUp'] as num?)?.toInt() ?? 0,
+      latency: (map['latency'] as num?)?.toInt(),
+      errorMessage: map['errorMessage'] as String?,
+      localIp: map['localIp'] as String?,
+      remoteIp: map['remoteIp'] as String?,
+    );
+  }
 
   @override
   List<Object?> get props => [

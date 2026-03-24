@@ -88,6 +88,8 @@ class AppConstants {
   static const String keyVpnConfig = 'vpn_configuration';
   static const String keyServerList = 'server_list';
   static const String keyLastServer = 'last_connected_server';
+  static const String keyLastConnectionTime = 'last_connection_time';
+  static const String keyTotalTraffic = 'total_traffic_bytes';
   static const String keyAutoConnect = 'auto_connect_enabled';
   static const String keyKillSwitch = 'kill_switch_enabled';
   static const String keyDnsLeak = 'dns_leak_protection';
@@ -98,8 +100,6 @@ class AppConstants {
   static const String keyTheme = 'app_theme';
   static const String keyLanguage = 'app_language';
   static const String keyFirstLaunch = 'first_launch';
-  static const String keyLastConnectionTime = 'last_connection_time';
-  static const String keyTotalTraffic = 'total_traffic_bytes';
 
   // ============================================
   // METHOD CHANNEL NAMES

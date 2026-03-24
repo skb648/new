@@ -1,55 +1,18 @@
-buildscript {
-    ext.kotlin_version = '1.9.22'
-    ext.gradle_version = '8.2.2'
-    ext.compile_sdk_version = 35
-    ext.target_sdk_version = 35
-    ext.min_sdk_version = 24
-    ext.ndk_version = '26.1.10909125'
-    ext.googleservices_version = '4.4.0'
-    ext.crashlytics_version = '2.9.9'
-    
-    repositories {
-        google()
-        mavenCentral()
-        gradlePluginPortal()
-    }
-
-    dependencies {
-        classpath "com.android.tools.build:gradle:$gradle_version"
-        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
-        classpath "com.google.gms:google-services:$googleservices_version"
-        classpath "com.google.firebase:firebase-crashlytics-gradle:$crashlytics_version"
-    }
-}
-
 allprojects {
     repositories {
         google()
         mavenCentral()
-        maven { url 'https://jitpack.io' }
-        maven { url 'https://maven.google.com' }
     }
 }
 
-rootProject.buildDir = '../build'
-
+rootProject.buildDir = "../build"
 subprojects {
     project.buildDir = "${rootProject.buildDir}/${project.name}"
-    project.evaluationDependsOn(':app')
+}
+subprojects {
+    project.evaluationDependsOn(":app")
 }
 
 tasks.register("clean", Delete) {
     delete rootProject.buildDir
-}
-
-// Force all subprojects to use consistent Kotlin version
-subprojects {
-    configurations.all {
-        resolutionStrategy {
-            force "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
-            force "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
-            force "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
-            force "org.jetbrains.kotlin:kotlin-reflect:$kotlin_version"
-        }
-    }
 }

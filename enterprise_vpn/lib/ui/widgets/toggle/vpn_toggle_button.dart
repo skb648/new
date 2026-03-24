@@ -28,24 +28,17 @@ class _VpnToggleButtonState extends State<VpnToggleButton>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _scaleAnimation;
-  late Animation<double> _glowAnimation;
+  bool _isPressed = false;
 
   @override
   void initState() {
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 300),
+      duration: const Duration(milliseconds: 150),
     );
 
-    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.95).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: Curves.easeInOut,
-      ),
-    );
-
-    _glowAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.92).animate(
       CurvedAnimation(
         parent: _controller,
         curve: Curves.easeInOut,
@@ -56,8 +49,12 @@ class _VpnToggleButtonState extends State<VpnToggleButton>
   @override
   void didUpdateWidget(VpnToggleButton oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.isAnimating && !oldWidget.isAnimating) {
-      // Start pulsing animation when connecting
+    // Reset animation when state changes externally
+    if (widget.isActive != oldWidget.isActive || 
+        widget.isAnimating != oldWidget.isAnimating) {
+      if (!widget.isAnimating) {
+        _controller.reverse();
+      }
     }
   }
 
@@ -67,17 +64,27 @@ class _VpnToggleButtonState extends State<VpnToggleButton>
     super.dispose();
   }
 
+  void _handleTap() {
+    // ✅ FIX: Always call onPressed - let parent handle state checks
+    HapticFeedback.mediumImpact();
+    widget.onPressed();
+  }
+
   void _handleTapDown(TapDownDetails details) {
+    setState(() => _isPressed = true);
     _controller.forward();
     HapticFeedback.lightImpact();
   }
 
   void _handleTapUp(TapUpDetails details) {
+    setState(() => _isPressed = false);
     _controller.reverse();
+    // Call onPressed after animation starts
     widget.onPressed();
   }
 
   void _handleTapCancel() {
+    setState(() => _isPressed = false);
     _controller.reverse();
   }
 
@@ -86,9 +93,12 @@ class _VpnToggleButtonState extends State<VpnToggleButton>
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return GestureDetector(
+      // ✅ FIX: Add onTap as fallback - this is the most reliable
+      onTap: _handleTap,
       onTapDown: _handleTapDown,
       onTapUp: _handleTapUp,
       onTapCancel: _handleTapCancel,
+      behavior: HitTestBehavior.opaque,
       child: AnimatedBuilder(
         animation: _controller,
         builder: (context, child) {
@@ -103,15 +113,15 @@ class _VpnToggleButtonState extends State<VpnToggleButton>
             // Glow Effect (when active)
             if (widget.isActive)
               Container(
-                width: widget.size + 40,
-                height: widget.size + 40,
+                width: widget.size + 60,
+                height: widget.size + 60,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                      color: AppTheme.primaryColor.withValues(alpha: 0.3),
-                      blurRadius: 40,
-                      spreadRadius: 10,
+                      color: AppTheme.primaryColor.withAlpha(80),
+                      blurRadius: 50,
+                      spreadRadius: 15,
                     ),
                   ],
                 ),
@@ -125,7 +135,8 @@ class _VpnToggleButtonState extends State<VpnToggleButton>
             if (widget.isAnimating) ..._buildPulseRings(isDark),
 
             // Main button
-            Container(
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
               width: widget.size,
               height: widget.size,
               decoration: BoxDecoration(
@@ -146,10 +157,18 @@ class _VpnToggleButtonState extends State<VpnToggleButton>
                 boxShadow: [
                   BoxShadow(
                     color: widget.isActive
-                        ? AppTheme.primaryColor.withValues(alpha: 0.4)
-                        : Colors.black.withValues(alpha: isDark ? 0.3 : 0.1),
+                        ? AppTheme.primaryColor.withAlpha(100)
+                        : (isDark ? Colors.black.withAlpha(80) : Colors.black.withAlpha(25)),
                     blurRadius: 30,
                     offset: const Offset(0, 10),
+                  ),
+                  // Add inner shadow effect
+                  BoxShadow(
+                    color: widget.isActive
+                        ? AppTheme.primaryColor.withAlpha(50)
+                        : Colors.transparent,
+                    blurRadius: 60,
+                    spreadRadius: 10,
                   ),
                 ],
               ),
@@ -162,7 +181,7 @@ class _VpnToggleButtonState extends State<VpnToggleButton>
                     child: widget.isAnimating
                         ? _buildLoadingIndicator(isDark)
                         : Icon(
-                            widget.isActive ? Icons.vpn_lock : Icons.power_settings_new,
+                            widget.isActive ? Icons.vpn_lock : Icons.power_settings_new_rounded,
                             key: ValueKey(widget.isActive),
                             size: widget.size * 0.4,
                             color: widget.isActive
@@ -176,13 +195,13 @@ class _VpnToggleButtonState extends State<VpnToggleButton>
                   // Progress ring when animating
                   if (widget.isAnimating)
                     SizedBox(
-                      width: widget.size - 16,
-                      height: widget.size - 16,
+                      width: widget.size - 20,
+                      height: widget.size - 20,
                       child: CircularProgressIndicator(
-                        strokeWidth: 3,
+                        strokeWidth: 4,
                         valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
                         strokeCap: StrokeCap.round,
-                        backgroundColor: Colors.white.withValues(alpha: 0.2),
+                        backgroundColor: Colors.white.withAlpha(50),
                       ),
                     ),
                 ],
@@ -198,12 +217,12 @@ class _VpnToggleButtonState extends State<VpnToggleButton>
     return [
       for (int i = 0; i < 3; i++)
         Container(
-          width: widget.size + 20.0 + (i * 30),
-          height: widget.size + 20.0 + (i * 30),
+          width: widget.size + 20.0 + (i * 40),
+          height: widget.size + 20.0 + (i * 40),
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             border: Border.all(
-              color: AppTheme.primaryColor.withValues(alpha: 0.3 - (i * 0.1)),
+              color: AppTheme.primaryColor.withAlpha((80 - (i * 25)).clamp(0, 255)),
               width: 2,
             ),
           ),
@@ -211,7 +230,7 @@ class _VpnToggleButtonState extends State<VpnToggleButton>
             .animate(onPlay: (controller) => controller.repeat())
             .scale(
               begin: const Offset(0.8, 0.8),
-              end: const Offset(1.2, 1.2),
+              end: const Offset(1.3, 1.3),
               duration: 1500.ms,
               delay: Duration(milliseconds: i * 300),
             )
@@ -225,8 +244,8 @@ class _VpnToggleButtonState extends State<VpnToggleButton>
   Widget _buildLoadingIndicator(bool isDark) {
     return SizedBox(
       key: const ValueKey('loading'),
-      width: widget.size * 0.4,
-      height: widget.size * 0.4,
+      width: widget.size * 0.35,
+      height: widget.size * 0.35,
       child: CircularProgressIndicator(
         strokeWidth: 3,
         valueColor: AlwaysStoppedAnimation<Color>(

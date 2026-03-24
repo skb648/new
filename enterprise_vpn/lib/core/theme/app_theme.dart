@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 /// Samsung One UI 6 Style Theme Configuration
 /// Premium, clean design with rounded corners and smooth animations
@@ -80,7 +81,6 @@ class AppTheme {
         centerTitle: false,
         titleSpacing: 20,
         titleTextStyle: TextStyle(
-          fontFamily: 'SamsungOne',
           fontSize: 22,
           fontWeight: FontWeight.w600,
           color: Color(0xFF1F1F1F),
@@ -113,7 +113,6 @@ class AppTheme {
             borderRadius: BorderRadius.circular(16),
           ),
           textStyle: const TextStyle(
-            fontFamily: 'SamsungOne',
             fontSize: 16,
             fontWeight: FontWeight.w500,
           ),
@@ -129,7 +128,6 @@ class AppTheme {
             borderRadius: BorderRadius.circular(12),
           ),
           textStyle: const TextStyle(
-            fontFamily: 'SamsungOne',
             fontSize: 14,
             fontWeight: FontWeight.w500,
           ),
@@ -162,17 +160,14 @@ class AppTheme {
           borderSide: const BorderSide(color: error, width: 2),
         ),
         hintStyle: const TextStyle(
-          fontFamily: 'SamsungOne',
           fontSize: 16,
           color: Color(0xFF9AA0A6),
         ),
         labelStyle: const TextStyle(
-          fontFamily: 'SamsungOne',
           fontSize: 16,
           color: Color(0xFF5F6368),
         ),
         floatingLabelStyle: const TextStyle(
-          fontFamily: 'SamsungOne',
           fontSize: 14,
           color: primaryColor,
         ),
@@ -188,7 +183,7 @@ class AppTheme {
         }),
         trackColor: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) {
-            return primaryColor.withValues(alpha: 0.5);
+            return primaryColor.withAlpha(128);
           }
           return const Color(0xFFE8EAED);
         }),
@@ -226,7 +221,7 @@ class AppTheme {
         size: 24,
       ),
 
-      // Text Theme - Samsung One UI Typography
+      // Text Theme
       textTheme: _buildTextTheme(),
     );
   }
@@ -277,7 +272,6 @@ class AppTheme {
         centerTitle: false,
         titleSpacing: 20,
         titleTextStyle: TextStyle(
-          fontFamily: 'SamsungOne',
           fontSize: 22,
           fontWeight: FontWeight.w600,
           color: Color(0xFFE8EAED),
@@ -310,7 +304,7 @@ class AppTheme {
         dragHandleSize: Size(40, 4),
       ),
 
-      // Text Theme - Samsung One UI Typography
+      // Text Theme
       textTheme: _buildTextTheme(isDark: true),
     );
   }
@@ -327,20 +321,17 @@ class AppTheme {
     return TextTheme(
       // Display Styles
       displayLarge: TextStyle(
-        fontFamily: 'SamsungSharpSans',
         fontSize: 57,
         fontWeight: FontWeight.w700,
         color: textColor,
         letterSpacing: -0.25,
       ),
       displayMedium: TextStyle(
-        fontFamily: 'SamsungSharpSans',
         fontSize: 45,
         fontWeight: FontWeight.w700,
         color: textColor,
       ),
       displaySmall: TextStyle(
-        fontFamily: 'SamsungSharpSans',
         fontSize: 36,
         fontWeight: FontWeight.w700,
         color: textColor,
@@ -348,19 +339,16 @@ class AppTheme {
 
       // Headline Styles
       headlineLarge: TextStyle(
-        fontFamily: 'SamsungOne',
         fontSize: 32,
         fontWeight: FontWeight.w600,
         color: textColor,
       ),
       headlineMedium: TextStyle(
-        fontFamily: 'SamsungOne',
         fontSize: 28,
         fontWeight: FontWeight.w600,
         color: textColor,
       ),
       headlineSmall: TextStyle(
-        fontFamily: 'SamsungOne',
         fontSize: 24,
         fontWeight: FontWeight.w600,
         color: textColor,
@@ -368,20 +356,17 @@ class AppTheme {
 
       // Title Styles
       titleLarge: TextStyle(
-        fontFamily: 'SamsungOne',
         fontSize: 22,
         fontWeight: FontWeight.w600,
         color: textColor,
       ),
       titleMedium: TextStyle(
-        fontFamily: 'SamsungOne',
         fontSize: 16,
         fontWeight: FontWeight.w600,
         color: textColor,
         letterSpacing: 0.15,
       ),
       titleSmall: TextStyle(
-        fontFamily: 'SamsungOne',
         fontSize: 14,
         fontWeight: FontWeight.w600,
         color: textColor,
@@ -390,21 +375,18 @@ class AppTheme {
 
       // Body Styles
       bodyLarge: TextStyle(
-        fontFamily: 'SamsungOne',
         fontSize: 16,
         fontWeight: FontWeight.w400,
         color: textColor,
         letterSpacing: 0.5,
       ),
       bodyMedium: TextStyle(
-        fontFamily: 'SamsungOne',
         fontSize: 14,
         fontWeight: FontWeight.w400,
         color: textColor,
         letterSpacing: 0.25,
       ),
       bodySmall: TextStyle(
-        fontFamily: 'SamsungOne',
         fontSize: 12,
         fontWeight: FontWeight.w400,
         color: textColorSecondary,
@@ -413,21 +395,18 @@ class AppTheme {
 
       // Label Styles
       labelLarge: TextStyle(
-        fontFamily: 'SamsungOne',
         fontSize: 14,
         fontWeight: FontWeight.w500,
         color: textColor,
         letterSpacing: 0.1,
       ),
       labelMedium: TextStyle(
-        fontFamily: 'SamsungOne',
         fontSize: 12,
         fontWeight: FontWeight.w500,
         color: textColorSecondary,
         letterSpacing: 0.5,
       ),
       labelSmall: TextStyle(
-        fontFamily: 'SamsungOne',
         fontSize: 11,
         fontWeight: FontWeight.w500,
         color: textColorTertiary,
@@ -451,8 +430,8 @@ class AppTheme {
       boxShadow: [
         BoxShadow(
           color: isDark
-              ? Colors.black.withValues(alpha: 0.3)
-              : Colors.black.withValues(alpha: 0.05),
+              ? Colors.black.withAlpha(80)
+              : Colors.black.withAlpha(15),
           blurRadius: 20,
           offset: const Offset(0, 4),
         ),
@@ -478,14 +457,14 @@ class AppTheme {
       boxShadow: isActive
           ? [
               BoxShadow(
-                color: primaryColor.withValues(alpha: 0.4),
+                color: primaryColor.withAlpha(100),
                 blurRadius: 30,
                 offset: const Offset(0, 10),
               ),
             ]
           : [
               BoxShadow(
-                color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.1),
+                color: Colors.black.withAlpha(isDark ? 80 : 25),
                 blurRadius: 20,
                 offset: const Offset(0, 4),
               ),
@@ -502,7 +481,7 @@ class AppTheme {
       shape: BoxShape.circle,
       boxShadow: [
         BoxShadow(
-          color: (isConnected ? statusConnected : statusDisconnected).withValues(alpha: 0.5),
+          color: (isConnected ? statusConnected : statusDisconnected).withAlpha(128),
           blurRadius: 8,
           spreadRadius: 2,
         ),

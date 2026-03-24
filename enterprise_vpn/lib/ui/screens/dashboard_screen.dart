@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../models/vpn_config.dart';
 import '../../models/vpn_state.dart';
 import '../bloc/vpn/vpn_cubit.dart';
 import '../bloc/config/config_cubit.dart';
@@ -42,6 +43,19 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   void _showAdvancedConfig() {
+    // ✅ FIX: Add SnackBar for immediate feedback
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('Opening Advanced Configuration...'),
+        backgroundColor: AppTheme.primaryColor,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 1),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+      ),
+    );
+    
     HapticFeedback.mediumImpact();
     setState(() => _showConfigSheet = true);
     showModalBottomSheet(
@@ -56,20 +70,60 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   void _toggleVpn() {
-    final vpnState = context.read<VpnCubit>().state;
-    final configState = context.read<ConfigCubit>().state;
-
-    if (vpnState is VpnReady && configState is ConfigLoaded) {
-      if (vpnState.status.state == VpnConnectionState.connected) {
-        context.read<VpnCubit>().disconnect();
-      } else {
-        if (configState.config.isValid) {
-          context.read<VpnCubit>().connect(configState.config);
-        } else {
-          _showAdvancedConfig();
-        }
-      }
+    // ✅ FIX: Add immediate SnackBar feedback
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('Power button pressed!'),
+        backgroundColor: AppTheme.primaryColor,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(milliseconds: 800),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+      ),
+    );
+    
+    HapticFeedback.mediumImpact();
+    
+    // Get the VPN cubit - state is always VpnReady now
+    final vpnCubit = context.read<VpnCubit>();
+    final configCubit = context.read<ConfigCubit>();
+    
+    // Get current VPN status
+    final currentState = vpnCubit.state;
+    VpnStatus currentStatus;
+    if (currentState is VpnReady) {
+      currentStatus = currentState.status;
+    } else {
+      currentStatus = VpnStatus.initial();
     }
+
+    // Get config
+    VpnConfig config;
+    if (configCubit.state is ConfigLoaded) {
+      config = (configCubit.state as ConfigLoaded).config;
+    } else {
+      config = VpnConfig.empty();
+    }
+
+    // Toggle based on current state
+    if (currentStatus.state == VpnConnectionState.connected) {
+      vpnCubit.disconnect();
+    } else if (currentStatus.state == VpnConnectionState.disconnected ||
+               currentStatus.state == VpnConnectionState.error ||
+               currentStatus.state == VpnConnectionState.noNetwork) {
+      // Check if config is valid
+      if (config.isValid && config.server != null) {
+        vpnCubit.connect(config);
+      } else {
+        // Show config sheet if no valid config
+        _showAdvancedConfig();
+      }
+    } else if (currentStatus.state == VpnConnectionState.connecting) {
+      // Allow cancel by disconnecting
+      vpnCubit.disconnect();
+    }
+    // If already disconnecting, do nothing
   }
 
   @override
@@ -87,7 +141,7 @@ class _DashboardScreenState extends State<DashboardScreen>
             if (state is VpnError) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text(state.message),
+                  content: Text('Error: ${state.message}'),
                   backgroundColor: AppTheme.error,
                   behavior: SnackBarBehavior.floating,
                   shape: RoundedRectangleBorder(
@@ -98,6 +152,23 @@ class _DashboardScreenState extends State<DashboardScreen>
             }
           },
           builder: (context, vpnState) {
+            // ✅ FIX: Always get status, default to disconnected
+            VpnStatus status;
+            VpnConfig? config;
+            
+            if (vpnState is VpnReady) {
+              status = vpnState.status;
+              config = vpnState.config;
+            } else if (vpnState is VpnError) {
+              status = VpnStatus.initial().copyWith(
+                state: VpnConnectionState.error,
+                errorMessage: vpnState.message,
+              );
+            } else {
+              // Default to disconnected state - UI always works
+              status = VpnStatus.initial();
+            }
+
             return SafeArea(
               child: CustomScrollView(
                 physics: const BouncingScrollPhysics(),
@@ -116,41 +187,39 @@ class _DashboardScreenState extends State<DashboardScreen>
                           const SizedBox(height: 20),
 
                           // VPN Toggle Button
-                          _buildToggleSection(context, vpnState, isDark),
+                          _buildToggleSection(context, status, isDark),
 
                           const SizedBox(height: 40),
 
                           // Status Card
-                          if (vpnState is VpnReady) ...[
-                            StatusCard(
-                              status: vpnState.status,
-                            ).animate().fadeIn(
-                              duration: 400.ms,
-                            ).slideY(
-                              begin: 0.1,
-                              end: 0,
-                              duration: 400.ms,
-                              curve: Curves.easeOutCubic,
-                            ),
+                          StatusCard(
+                            status: status,
+                          ).animate().fadeIn(
+                            duration: 400.ms,
+                          ).slideY(
+                            begin: 0.1,
+                            end: 0,
+                            duration: 400.ms,
+                            curve: Curves.easeOutCubic,
+                          ),
 
-                            const SizedBox(height: 20),
+                          const SizedBox(height: 20),
 
-                            // Traffic Stats Card
-                            TrafficStatsCard(
-                              bytesIn: vpnState.status.bytesIn,
-                              bytesOut: vpnState.status.bytesOut,
-                              speedDown: vpnState.status.currentSpeedDown,
-                              speedUp: vpnState.status.currentSpeedUp,
-                            ).animate().fadeIn(
-                              duration: 400.ms,
-                              delay: 100.ms,
-                            ).slideY(
-                              begin: 0.1,
-                              end: 0,
-                              duration: 400.ms,
-                              curve: Curves.easeOutCubic,
-                            ),
-                          ],
+                          // Traffic Stats Card
+                          TrafficStatsCard(
+                            bytesIn: status.bytesIn,
+                            bytesOut: status.bytesOut,
+                            speedDown: status.currentSpeedDown,
+                            speedUp: status.currentSpeedUp,
+                          ).animate().fadeIn(
+                            duration: 400.ms,
+                            delay: 100.ms,
+                          ).slideY(
+                            begin: 0.1,
+                            end: 0,
+                            duration: 400.ms,
+                            curve: Curves.easeOutCubic,
+                          ),
 
                           const SizedBox(height: 30),
 
@@ -208,8 +277,20 @@ class _DashboardScreenState extends State<DashboardScreen>
             icon: Icons.settings_outlined,
             isDark: isDark,
             onTap: () {
+              // ✅ FIX: Add SnackBar feedback
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: const Text('Settings button pressed!'),
+                  backgroundColor: AppTheme.primaryColor,
+                  behavior: SnackBarBehavior.floating,
+                  duration: const Duration(milliseconds: 800),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+              );
               HapticFeedback.lightImpact();
-              // Navigate to settings
+              // TODO: Navigate to settings
             },
           ),
         ],
@@ -219,13 +300,12 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   Widget _buildToggleSection(
     BuildContext context,
-    VpnState vpnState,
+    VpnStatus status,
     bool isDark,
   ) {
-    final status = vpnState is VpnReady ? vpnState.status.state : VpnConnectionState.disconnected;
-    final isConnected = status == VpnConnectionState.connected;
-    final isConnecting = status == VpnConnectionState.connecting ||
-        status == VpnConnectionState.reconnecting;
+    final isConnected = status.state == VpnConnectionState.connected;
+    final isConnecting = status.state == VpnConnectionState.connecting ||
+        status.state == VpnConnectionState.reconnecting;
 
     return Column(
       children: [
@@ -233,10 +313,10 @@ class _DashboardScreenState extends State<DashboardScreen>
         AnimatedSwitcher(
           duration: const Duration(milliseconds: 300),
           child: Text(
-            _getStatusText(status),
-            key: ValueKey(status),
+            _getStatusText(status.state),
+            key: ValueKey(status.state),
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: _getStatusColor(status),
+                  color: _getStatusColor(status.state),
                   fontWeight: FontWeight.w600,
                 ),
           ),
@@ -257,9 +337,16 @@ class _DashboardScreenState extends State<DashboardScreen>
         // Server Info
         BlocBuilder<ConfigCubit, ConfigState>(
           builder: (context, configState) {
-            final server = configState is ConfigLoaded 
-                ? configState.config.server 
-                : null;
+            String serverInfo = 'No server configured';
+            if (configState is ConfigLoaded && configState.config.server != null) {
+              serverInfo = configState.config.server?.name ?? 
+                           configState.config.server?.serverIp ?? 
+                           'Custom Server';
+            } else if (status.serverName != null) {
+              serverInfo = status.serverName!;
+            } else if (status.serverIp != null) {
+              serverInfo = status.serverIp!;
+            }
 
             return AnimatedContainer(
               duration: const Duration(milliseconds: 300),
@@ -285,7 +372,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                   ),
                   const SizedBox(width: 10),
                   Text(
-                    server?.name ?? server?.serverIp ?? 'No server configured',
+                    serverInfo,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: isDark
                               ? const Color(0xFFE8EAED)
@@ -302,79 +389,83 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   Widget _buildConfigButton(BuildContext context, bool isDark) {
-    return GestureDetector(
-      onTap: _showAdvancedConfig,
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: isDark 
-              ? const Color(0xFF1E1E1E) 
-              : Colors.white,
-          borderRadius: BorderRadius.circular(24),
-          boxShadow: [
-            BoxShadow(
-              color: isDark
-                  ? Colors.black.withValues(alpha: 0.3)
-                  : Colors.black.withValues(alpha: 0.05),
-              blurRadius: 20,
-              offset: const Offset(0, 4),
-            ),
-          ],
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: _showAdvancedConfig,
+        borderRadius: BorderRadius.circular(24),
+        child: Ink(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: isDark 
+                ? const Color(0xFF1E1E1E) 
+                : Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: isDark
+                    ? Colors.black.withAlpha(80)
+                    : Colors.black.withAlpha(13),
+                blurRadius: 20,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryColor.withAlpha(25),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  Icons.tune_outlined,
+                  color: AppTheme.primaryColor,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Advanced Routing Config',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: isDark 
+                                ? const Color(0xFFE8EAED) 
+                                : const Color(0xFF1F1F1F),
+                          ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Server IP, Port, Headers, SNI',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: isDark 
+                                ? const Color(0xFF9AA0A6) 
+                                : const Color(0xFF5F6368),
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.keyboard_arrow_up,
+                color: isDark 
+                    ? const Color(0xFF9AA0A6) 
+                    : const Color(0xFF5F6368),
+              ),
+            ],
+          ),
         ),
-        child: Row(
-          children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: AppTheme.primaryColor.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Icon(
-                Icons.tune_outlined,
-                color: AppTheme.primaryColor,
-                size: 24,
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Advanced Routing Config',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: isDark 
-                              ? const Color(0xFFE8EAED) 
-                              : const Color(0xFF1F1F1F),
-                        ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Server IP, Port, Headers, SNI',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: isDark 
-                              ? const Color(0xFF9AA0A6) 
-                              : const Color(0xFF5F6368),
-                        ),
-                  ),
-                ],
-              ),
-            ),
-            Icon(
-              Icons.keyboard_arrow_up,
-              color: isDark 
-                  ? const Color(0xFF9AA0A6) 
-                  : const Color(0xFF5F6368),
-            ),
-          ],
-        ),
-      ).animate(target: _showConfigSheet ? 1 : 0).scale(
-        begin: const Offset(1, 1),
-        end: const Offset(0.95, 0.95),
-        duration: 200.ms,
       ),
+    ).animate(target: _showConfigSheet ? 1 : 0).scale(
+      begin: const Offset(1, 1),
+      end: const Offset(0.95, 0.95),
+      duration: 200.ms,
     );
   }
 
@@ -383,22 +474,26 @@ class _DashboardScreenState extends State<DashboardScreen>
     required bool isDark,
     required VoidCallback onTap,
   }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 48,
-        height: 48,
-        decoration: BoxDecoration(
-          color: isDark 
-              ? const Color(0xFF2D2D2D) 
-              : const Color(0xFFF5F5F5),
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Icon(
-          icon,
-          color: isDark 
-              ? const Color(0xFFE8EAED) 
-              : const Color(0xFF5F6368),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Ink(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            color: isDark 
+                ? const Color(0xFF2D2D2D) 
+                : const Color(0xFFF5F5F5),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Icon(
+            icon,
+            color: isDark 
+                ? const Color(0xFFE8EAED) 
+                : const Color(0xFF5F6368),
+          ),
         ),
       ),
     );

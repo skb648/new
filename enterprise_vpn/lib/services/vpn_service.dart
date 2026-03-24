@@ -12,7 +12,7 @@ import '../models/vpn_state.dart';
 
 /// VPN Service
 /// Handles all communication between Flutter and Native Android VPN service
-class VpnService with ChangeNotifier {
+class VpnService {
   VpnService({
     required FlutterSecureStorage secureStorage,
     required SharedPreferences preferences,
@@ -30,17 +30,20 @@ class VpnService with ChangeNotifier {
   // ============================================
 
   late final MethodChannel _methodChannel;
-  late final EventChannel _stateChannel;
-  late final EventChannel _trafficChannel;
-  late final EventChannel _eventsChannel;
+  late final EventChannel _statusEventChannel;
+  late final EventChannel _trafficEventChannel;
+  late final EventChannel _eventsEventChannel;
 
   // ============================================
   // STREAM CONTROLLERS
   // ============================================
 
-  final StreamController<VpnStatus> _statusController = StreamController<VpnStatus>.broadcast();
-  final StreamController<TrafficStats> _trafficController = StreamController<TrafficStats>.broadcast();
-  final StreamController<VpnEvent> _eventsController = StreamController<VpnEvent>.broadcast();
+  final StreamController<VpnStatus> _statusStreamController = 
+      StreamController<VpnStatus>.broadcast();
+  final StreamController<TrafficStats> _trafficStreamController = 
+      StreamController<TrafficStats>.broadcast();
+  final StreamController<VpnEvent> _eventsStreamController = 
+      StreamController<VpnEvent>.broadcast();
 
   // ============================================
   // STATE
@@ -54,10 +57,16 @@ class VpnService with ChangeNotifier {
   // ============================================
 
   VpnStatus get status => _status;
-  Stream<VpnStatus> get statusStream => _statusController.stream;
-  Stream<TrafficStats> get trafficStream => _trafficController.stream;
-  Stream<VpnEvent> get eventsStream => _eventsController.stream;
   bool get isInitialized => _isInitialized;
+  
+  /// Stream of VPN status updates
+  Stream<VpnStatus> get statusStream => _statusStreamController.stream;
+  
+  /// Stream of traffic statistics
+  Stream<TrafficStats> get trafficStream => _trafficStreamController.stream;
+  
+  /// Stream of VPN events
+  Stream<VpnEvent> get eventsStream => _eventsStreamController.stream;
 
   // ============================================
   // INITIALIZATION
@@ -69,22 +78,25 @@ class VpnService with ChangeNotifier {
   }
 
   void _initEventChannels() {
-    _stateChannel = const EventChannel(AppConstants.channelVpnState);
-    _stateChannel.receiveBroadcastStream().listen(
-      _handleStateUpdate,
-      onError: (error) => _handleError('State channel error: $error'),
+    // Status event channel
+    _statusEventChannel = const EventChannel(AppConstants.channelVpnState);
+    _statusEventChannel.receiveBroadcastStream().listen(
+      (data) => _handleStatusUpdate(data),
+      onError: (error) => _handleError('Status channel error: $error'),
     );
 
-    _trafficChannel = const EventChannel(AppConstants.channelTrafficStats);
-    _trafficChannel.receiveBroadcastStream().listen(
-      _handleTrafficUpdate,
-      onError: (error) => _handleError('Traffic channel error: $error'),
+    // Traffic event channel
+    _trafficEventChannel = const EventChannel(AppConstants.channelTrafficStats);
+    _trafficEventChannel.receiveBroadcastStream().listen(
+      (data) => _handleTrafficUpdate(data),
+      onError: (error) => debugPrint('Traffic channel error: $error'),
     );
 
-    _eventsChannel = const EventChannel(AppConstants.channelConnectionEvents);
-    _eventsChannel.receiveBroadcastStream().listen(
-      _handleConnectionEvent,
-      onError: (error) => _handleError('Events channel error: $error'),
+    // Events event channel
+    _eventsEventChannel = const EventChannel(AppConstants.channelConnectionEvents);
+    _eventsEventChannel.receiveBroadcastStream().listen(
+      (data) => _handleConnectionEvent(data),
+      onError: (error) => debugPrint('Events channel error: $error'),
     );
   }
 
@@ -95,50 +107,52 @@ class VpnService with ChangeNotifier {
   Future<dynamic> _handleMethodCall(MethodCall call) async {
     switch (call.method) {
       case 'onStatusChanged':
-        _handleStateUpdate(call.arguments);
+        _handleStatusUpdate(call.arguments);
         break;
       case 'onTrafficUpdate':
         _handleTrafficUpdate(call.arguments);
         break;
+      case 'onVpnEvent':
+        _handleConnectionEvent(call.arguments);
+        break;
       case 'onError':
-        _handleError(call.arguments as String);
+        _handleError(call.arguments?.toString() ?? 'Unknown error');
         break;
       default:
         debugPrint('Unknown method call: ${call.method}');
     }
   }
 
-  void _handleStateUpdate(dynamic data) {
+  void _handleStatusUpdate(dynamic data) {
     try {
-      final Map<String, dynamic> stateData = data is String 
+      final Map<String, dynamic> statusData = data is String 
           ? jsonDecode(data) as Map<String, dynamic> 
-          : data as Map<String, dynamic>;
+          : Map<String, dynamic>.from(data as Map);
 
-      final stateString = stateData['state'] as String? ?? 'disconnected';
+      final stateString = statusData['state'] as String? ?? 'disconnected';
       final state = _parseConnectionState(stateString);
 
       _status = _status.copyWith(
         state: state,
-        serverName: stateData['serverName'] as String?,
-        serverIp: stateData['serverIp'] as String?,
-        serverPort: stateData['serverPort'] as int?,
-        protocol: stateData['protocol'] as String?,
-        connectedAt: stateData['connectedAt'] != null
-            ? DateTime.parse(stateData['connectedAt'] as String)
+        serverName: statusData['serverName'] as String?,
+        serverIp: statusData['serverIp'] as String?,
+        serverPort: statusData['serverPort'] as int?,
+        protocol: statusData['protocol'] as String?,
+        connectedAt: statusData['connectedAt'] != null
+            ? DateTime.tryParse(statusData['connectedAt'] as String)
             : null,
-        duration: stateData['duration'] != null
-            ? Duration(seconds: stateData['duration'] as int)
-            : Duration.zero,
-        latency: stateData['latency'] as int?,
-        errorMessage: stateData['errorMessage'] as String?,
-        localIp: stateData['localIp'] as String?,
-        remoteIp: stateData['remoteIp'] as String?,
+        duration: statusData['duration'] != null
+            ? Duration(seconds: (statusData['duration'] as num).toInt())
+            : null,
+        latency: statusData['latency'] as int?,
+        errorMessage: statusData['errorMessage'] as String?,
+        localIp: statusData['localIp'] as String?,
+        remoteIp: statusData['remoteIp'] as String?,
       );
 
-      _statusController.add(_status);
-      notifyListeners();
+      _statusStreamController.add(_status);
     } catch (e) {
-      debugPrint('Error parsing state update: $e');
+      debugPrint('Error parsing status update: $e');
     }
   }
 
@@ -146,14 +160,14 @@ class VpnService with ChangeNotifier {
     try {
       final Map<String, dynamic> trafficData = data is String 
           ? jsonDecode(data) as Map<String, dynamic> 
-          : data as Map<String, dynamic>;
+          : Map<String, dynamic>.from(data as Map);
 
       final stats = TrafficStats(
         timestamp: DateTime.now(),
-        bytesIn: trafficData['bytesIn'] as int? ?? 0,
-        bytesOut: trafficData['bytesOut'] as int? ?? 0,
-        speedDown: trafficData['speedDown'] as int? ?? 0,
-        speedUp: trafficData['speedUp'] as int? ?? 0,
+        bytesIn: (trafficData['bytesIn'] as num?)?.toInt() ?? 0,
+        bytesOut: (trafficData['bytesOut'] as num?)?.toInt() ?? 0,
+        speedDown: (trafficData['speedDown'] as num?)?.toInt() ?? 0,
+        speedUp: (trafficData['speedUp'] as num?)?.toInt() ?? 0,
       );
 
       _status = _status.copyWith(
@@ -163,8 +177,8 @@ class VpnService with ChangeNotifier {
         currentSpeedUp: stats.speedUp,
       );
 
-      _trafficController.add(stats);
-      notifyListeners();
+      _trafficStreamController.add(stats);
+      _statusStreamController.add(_status);
     } catch (e) {
       debugPrint('Error parsing traffic update: $e');
     }
@@ -174,19 +188,19 @@ class VpnService with ChangeNotifier {
     try {
       final Map<String, dynamic> eventData = data is String 
           ? jsonDecode(data) as Map<String, dynamic> 
-          : data as Map<String, dynamic>;
+          : Map<String, dynamic>.from(data as Map);
 
+      final typeString = eventData['type'] as String? ?? 'unknown';
       final event = VpnEvent(
-        type: VpnEventType.values.firstWhere(
-          (t) => t.name == eventData['type'],
-          orElse: () => VpnEventType.unknown,
-        ),
+        type: _parseEventType(typeString),
         message: eventData['message'] as String? ?? '',
         timestamp: DateTime.now(),
-        data: eventData['data'] as Map<String, dynamic>?,
+        data: eventData['data'] != null 
+            ? Map<String, dynamic>.from(eventData['data'] as Map)
+            : null,
       );
 
-      _eventsController.add(event);
+      _eventsStreamController.add(event);
     } catch (e) {
       debugPrint('Error parsing connection event: $e');
     }
@@ -200,15 +214,13 @@ class VpnService with ChangeNotifier {
       errorMessage: error,
     );
 
-    _statusController.add(_status);
+    _statusStreamController.add(_status);
     
-    _eventsController.add(VpnEvent(
+    _eventsStreamController.add(VpnEvent(
       type: VpnEventType.error,
       message: error,
       timestamp: DateTime.now(),
     ));
-
-    notifyListeners();
   }
 
   VpnConnectionState _parseConnectionState(String state) {
@@ -233,6 +245,13 @@ class VpnService with ChangeNotifier {
     }
   }
 
+  VpnEventType _parseEventType(String type) {
+    return VpnEventType.values.firstWhere(
+      (t) => t.name.toLowerCase() == type.toLowerCase(),
+      orElse: () => VpnEventType.unknown,
+    );
+  }
+
   // ============================================
   // PUBLIC METHODS
   // ============================================
@@ -242,15 +261,16 @@ class VpnService with ChangeNotifier {
     if (_isInitialized) return;
 
     try {
+      // Check permission status
       final hasPermission = await hasVpnPermission();
-      if (!hasPermission) {
-        debugPrint('VPN permission not granted');
-      }
+      debugPrint('VPN permission status: $hasPermission');
 
       _isInitialized = true;
       debugPrint('VPN Service initialized');
     } catch (e) {
       debugPrint('Failed to initialize VPN service: $e');
+      // Still mark as initialized - user can try to connect
+      _isInitialized = true;
     }
   }
 
@@ -288,7 +308,7 @@ class VpnService with ChangeNotifier {
     }
 
     try {
-      // Update state to connecting
+      // Update to connecting state immediately
       _status = _status.copyWith(
         state: VpnConnectionState.connecting,
         serverName: config.server?.name,
@@ -296,8 +316,7 @@ class VpnService with ChangeNotifier {
         serverPort: config.server?.port,
         protocol: config.server?.protocol,
       );
-      _statusController.add(_status);
-      notifyListeners();
+      _statusStreamController.add(_status);
 
       final result = await _methodChannel.invokeMethod<bool>(
         AppConstants.methodConnect,
@@ -323,8 +342,7 @@ class VpnService with ChangeNotifier {
   Future<bool> disconnect() async {
     try {
       _status = _status.copyWith(state: VpnConnectionState.disconnecting);
-      _statusController.add(_status);
-      notifyListeners();
+      _statusStreamController.add(_status);
 
       final result = await _methodChannel.invokeMethod<bool>(
         AppConstants.methodDisconnect,
@@ -345,7 +363,7 @@ class VpnService with ChangeNotifier {
       );
 
       if (result != null) {
-        _handleStateUpdate(result);
+        _handleStatusUpdate(result);
       }
 
       return _status;
@@ -407,10 +425,9 @@ class VpnService with ChangeNotifier {
   // ============================================
 
   void dispose() {
-    _statusController.close();
-    _trafficController.close();
-    _eventsController.close();
-    super.dispose();
+    _statusStreamController.close();
+    _trafficStreamController.close();
+    _eventsStreamController.close();
   }
 }
 

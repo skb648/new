@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:fl_chart/fl_chart.dart';
 
 import '../../../core/theme/app_theme.dart';
 
 /// Traffic Stats Card Widget
-/// Displays real-time traffic statistics with visual chart
+/// Displays real-time traffic statistics (simplified without fl_chart)
 class TrafficStatsCard extends StatelessWidget {
   const TrafficStatsCard({
     super.key,
@@ -32,8 +31,8 @@ class TrafficStatsCard extends StatelessWidget {
         boxShadow: [
           BoxShadow(
             color: isDark
-                ? Colors.black.withValues(alpha: 0.3)
-                : Colors.black.withValues(alpha: 0.05),
+                ? Colors.black.withAlpha(80)
+                : Colors.black.withAlpha(15),
             blurRadius: 20,
             offset: const Offset(0, 4),
           ),
@@ -86,8 +85,44 @@ class TrafficStatsCard extends StatelessWidget {
 
           const SizedBox(height: 24),
 
-          // Mini Chart
-          _buildMiniChart(context, isDark),
+          // Total Traffic
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: isDark
+                  ? const Color(0xFF2D2D2D)
+                  : const Color(0xFFF5F5F5),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildTotalItem(
+                  context,
+                  label: 'Total Download',
+                  value: _formatBytes(bytesIn),
+                  icon: Icons.download,
+                  color: AppTheme.statusConnected,
+                  isDark: isDark,
+                ),
+                Container(
+                  width: 1,
+                  height: 40,
+                  color: isDark
+                      ? const Color(0xFF424242)
+                      : const Color(0xFFE8EAED),
+                ),
+                _buildTotalItem(
+                  context,
+                  label: 'Total Upload',
+                  value: _formatBytes(bytesOut),
+                  icon: Icons.upload,
+                  color: AppTheme.primaryColor,
+                  isDark: isDark,
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -119,7 +154,7 @@ class TrafficStatsCard extends StatelessWidget {
                 width: 32,
                 height: 32,
                 decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.15),
+                  color: color.withAlpha(40),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(
@@ -149,73 +184,47 @@ class TrafficStatsCard extends StatelessWidget {
                       : const Color(0xFF1F1F1F),
                 ),
           ),
-          const SizedBox(height: 4),
-          Text(
-            'Total: ${_formatBytes(total)}',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: isDark
-                      ? const Color(0xFF9AA0A6)
-                      : const Color(0xFF5F6368),
-                ),
-          ),
         ],
       ),
     );
   }
 
-  Widget _buildMiniChart(BuildContext context, bool isDark) {
-    return SizedBox(
-      height: 80,
-      child: LineChart(
-        LineChartData(
-          gridData: FlGridData(show: false),
-          titlesData: FlTitlesData(show: false),
-          borderData: FlBorderData(show: false),
-          minX: 0,
-          maxX: 10,
-          minY: 0,
-          maxY: 6,
-          lineBarsData: [
-            // Download line
-            LineChartBarData(
-              spots: _generateRandomSpots(),
-              isCurved: true,
-              color: AppTheme.statusConnected,
-              barWidth: 2,
-              dotData: const FlDotData(show: false),
-              belowBarData: BarAreaData(
-                show: true,
-                color: AppTheme.statusConnected.withValues(alpha: 0.1),
-              ),
-            ),
-            // Upload line
-            LineChartBarData(
-              spots: _generateRandomSpots(offset: 1),
-              isCurved: true,
-              color: AppTheme.primaryColor,
-              barWidth: 2,
-              dotData: const FlDotData(show: false),
-              belowBarData: BarAreaData(
-                show: true,
-                color: AppTheme.primaryColor.withValues(alpha: 0.1),
-              ),
-            ),
-          ],
+  Widget _buildTotalItem(
+    BuildContext context, {
+    required String label,
+    required String value,
+    required IconData icon,
+    required Color color,
+    required bool isDark,
+  }) {
+    return Column(
+      children: [
+        Icon(
+          icon,
+          color: color,
+          size: 20,
         ),
-      ),
+        const SizedBox(height: 8),
+        Text(
+          value,
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: isDark
+                    ? const Color(0xFFE8EAED)
+                    : const Color(0xFF1F1F1F),
+              ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: isDark
+                    ? const Color(0xFF9AA0A6)
+                    : const Color(0xFF5F6368),
+              ),
+        ),
+      ],
     );
-  }
-
-  List<FlSpot> _generateRandomSpots({int offset = 0}) {
-    // Generate realistic-looking traffic data
-    return List.generate(11, (index) {
-      final baseValue = 2.5 + (offset * 0.5);
-      final variance = (index % 3 == 0) ? 1.5 : 0.5;
-      return FlSpot(
-        index.toDouble(),
-        baseValue + variance + (index * 0.1),
-      );
-    });
   }
 
   String _formatSpeed(int bytesPerSec) {

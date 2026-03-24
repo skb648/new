@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 
@@ -73,7 +74,9 @@ class VpnCubit extends Cubit<VpnState> {
     required ConnectivityService connectivityService,
   })  : _vpnService = vpnService,
         _connectivityService = connectivityService,
-        super(const VpnInitial()) {
+        // ✅ FIX: Start with VpnReady (disconnected) instead of VpnInitial
+        // This ensures the UI is interactive immediately
+        super(VpnReady(status: VpnStatus.initial())) {
     _init();
   }
 
@@ -96,7 +99,7 @@ class VpnCubit extends Cubit<VpnState> {
     _eventSubscription = _vpnService.eventsStream.listen(_onVpnEvent);
 
     // Listen to network changes
-    _networkSubscription = _connectivityService.addListener(_onNetworkChange);
+    _networkSubscription = _connectivityService.onStatusChange.listen(_onNetworkChange);
   }
 
   void _onStatusUpdate(VpnStatus status) {
@@ -109,7 +112,6 @@ class VpnCubit extends Cubit<VpnState> {
   }
 
   void _onTrafficUpdate(TrafficStats stats) {
-    // Traffic updates are handled through status updates
     debugPrint('Traffic: ↓${stats.speedDown} ↑${stats.speedUp}');
   }
 
@@ -129,7 +131,6 @@ class VpnCubit extends Cubit<VpnState> {
         }
         break;
       case VpnEventType.permissionRequired:
-        // Handle permission requirement
         debugPrint('VPN permission required');
         break;
       default:
@@ -137,8 +138,7 @@ class VpnCubit extends Cubit<VpnState> {
     }
   }
 
-  void _onNetworkChange() {
-    final networkStatus = _connectivityService.status;
+  void _onNetworkChange(NetworkStatus networkStatus) {
     debugPrint('Network changed: $networkStatus');
 
     // If network is offline and VPN was connected, update state
@@ -159,17 +159,21 @@ class VpnCubit extends Cubit<VpnState> {
   // PUBLIC METHODS
   // ============================================
 
-  /// Initialize VPN service
+  /// Initialize VPN service - UI already works
   Future<void> initialize() async {
-    emit(const VpnLoading());
-
+    // Don't emit loading - keep UI interactive
     try {
       await _vpnService.initialize();
       final status = await _vpnService.getStatus();
-
-      emit(VpnReady(status: status));
+      
+      // Only update if we got valid status
+      if (status.state != VpnConnectionState.disconnected || 
+          status.serverIp != null) {
+        emit(VpnReady(status: status));
+      }
     } catch (e) {
-      emit(VpnError(message: 'Failed to initialize: $e'));
+      debugPrint('Initialize error (non-critical): $e');
+      // Stay in ready state with disconnected status
     }
   }
 
@@ -178,32 +182,50 @@ class VpnCubit extends Cubit<VpnState> {
     try {
       return await _vpnService.requestVpnPermission();
     } catch (e) {
-      emit(VpnError(message: 'Permission request failed: $e'));
+      debugPrint('Permission request failed: $e');
       return false;
     }
   }
 
   /// Check if VPN permission is granted
   Future<bool> hasPermission() async {
-    return await _vpnService.hasVpnPermission();
+    try {
+      return await _vpnService.hasVpnPermission();
+    } catch (e) {
+      debugPrint('Permission check failed: $e');
+      return false;
+    }
   }
 
   /// Connect to VPN
   Future<void> connect(VpnConfig config) async {
-    final currentState = state;
-    if (currentState is! VpnReady) return;
+    // Get or create current state
+    VpnReady currentState;
+    if (state is VpnReady) {
+      currentState = state as VpnReady;
+    } else {
+      currentState = VpnReady(status: VpnStatus.initial());
+    }
 
     // Check permission first
-    final hasPermission = await _vpnService.hasVpnPermission();
-    if (!hasPermission) {
-      final granted = await _vpnService.requestVpnPermission();
-      if (!granted) {
-        emit(const VpnError(
-          message: 'VPN permission denied',
-          code: 'PERMISSION_DENIED',
-        ));
-        return;
+    try {
+      final hasPermission = await _vpnService.hasVpnPermission();
+      if (!hasPermission) {
+        final granted = await _vpnService.requestVpnPermission();
+        if (!granted) {
+          emit(const VpnError(
+            message: 'VPN permission denied. Please grant VPN permission.',
+            code: 'PERMISSION_DENIED',
+          ));
+          // Reset to ready after error
+          await Future.delayed(const Duration(seconds: 2));
+          emit(VpnReady(status: VpnStatus.initial()));
+          return;
+        }
       }
+    } catch (e) {
+      debugPrint('Permission check error: $e');
+      // Continue anyway - permission might be granted
     }
 
     // Check network connectivity
@@ -233,20 +255,33 @@ class VpnCubit extends Cubit<VpnState> {
     try {
       final success = await _vpnService.connect(config);
       if (!success) {
-        emit(VpnError(
-          message: 'Failed to connect to VPN',
-          code: 'CONNECTION_FAILED',
+        emit(VpnReady(
+          status: currentState.status.copyWith(
+            state: VpnConnectionState.error,
+            errorMessage: 'Failed to connect to VPN server',
+          ),
+          config: config,
         ));
       }
     } catch (e) {
-      emit(VpnError(message: 'Connection error: $e'));
+      emit(VpnReady(
+        status: currentState.status.copyWith(
+          state: VpnConnectionState.error,
+          errorMessage: 'Connection error: $e',
+        ),
+        config: config,
+      ));
     }
   }
 
   /// Disconnect from VPN
   Future<void> disconnect() async {
-    final currentState = state;
-    if (currentState is! VpnReady) return;
+    VpnReady currentState;
+    if (state is VpnReady) {
+      currentState = state as VpnReady;
+    } else {
+      currentState = VpnReady(status: VpnStatus.initial());
+    }
 
     emit(VpnReady(
       status: currentState.status.copyWith(
@@ -258,14 +293,20 @@ class VpnCubit extends Cubit<VpnState> {
     try {
       await _vpnService.disconnect();
     } catch (e) {
-      emit(VpnError(message: 'Disconnection error: $e'));
+      debugPrint('Disconnect error: $e');
+      // Reset to disconnected state
+      emit(VpnReady(status: VpnStatus.initial()));
     }
   }
 
   /// Toggle VPN connection
   Future<void> toggle(VpnConfig config) async {
-    final currentState = state;
-    if (currentState is! VpnReady) return;
+    VpnReady currentState;
+    if (state is VpnReady) {
+      currentState = state as VpnReady;
+    } else {
+      currentState = VpnReady(status: VpnStatus.initial());
+    }
 
     if (currentState.status.state == VpnConnectionState.connected) {
       await disconnect();
@@ -282,6 +323,11 @@ class VpnCubit extends Cubit<VpnState> {
   /// Update SNI configuration
   Future<bool> updateSni(SniConfig sniConfig) async {
     return await _vpnService.setSni(sniConfig);
+  }
+
+  /// Reset to initial state
+  void reset() {
+    emit(VpnReady(status: VpnStatus.initial()));
   }
 
   /// App lifecycle callbacks

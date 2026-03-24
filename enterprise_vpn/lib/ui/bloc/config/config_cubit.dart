@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../models/vpn_config.dart';
@@ -71,15 +72,17 @@ class ConfigCubit extends Cubit<ConfigState> {
     required SharedPreferences preferences,
   })  : _secureStorage = secureStorage,
         _preferences = preferences,
-        super(const ConfigInitial());
+        // ✅ FIX: Start with ConfigLoaded (empty config) instead of ConfigInitial
+        // This ensures the UI is interactive immediately
+        super(ConfigLoaded(config: VpnConfig.empty())) {
+    // Load saved config in background
+    _loadConfiguration();
+  }
 
   final FlutterSecureStorage _secureStorage;
   final SharedPreferences _preferences;
 
-  /// Load saved configuration
-  Future<void> loadConfiguration() async {
-    emit(const ConfigLoading());
-
+  Future<void> _loadConfiguration() async {
     try {
       // Load VPN configuration
       final configJson = await _secureStorage.read(key: AppConstants.keyVpnConfig);
@@ -100,19 +103,34 @@ class ConfigCubit extends Cubit<ConfigState> {
             .toList();
       }
 
-      emit(ConfigLoaded(
-        config: config,
-        savedServers: savedServers,
-      ));
+      // Only emit if we have real data, otherwise keep empty config
+      if (configJson != null || serversJson != null) {
+        emit(ConfigLoaded(
+          config: config,
+          savedServers: savedServers,
+        ));
+      }
     } catch (e) {
-      emit(ConfigError(message: 'Failed to load configuration: $e'));
+      debugPrint('Failed to load configuration: $e');
+      // Keep the empty config state - don't emit error
     }
+  }
+
+  /// Reload configuration from storage
+  Future<void> loadConfiguration() async {
+    await _loadConfiguration();
   }
 
   /// Save complete configuration
   Future<void> saveConfiguration(VpnConfig config) async {
     final currentState = state;
-    if (currentState is! ConfigLoaded) return;
+    ConfigLoaded currentLoadedState;
+    
+    if (currentState is ConfigLoaded) {
+      currentLoadedState = currentState;
+    } else {
+      currentLoadedState = ConfigLoaded(config: VpnConfig.empty());
+    }
 
     try {
       await _secureStorage.write(
@@ -120,31 +138,39 @@ class ConfigCubit extends Cubit<ConfigState> {
         value: config.toJson(),
       );
 
-      emit(currentState.copyWith(config: config));
+      emit(currentLoadedState.copyWith(config: config));
     } catch (e) {
-      emit(ConfigError(message: 'Failed to save configuration: $e'));
+      debugPrint('Failed to save configuration: $e');
+      // Keep state - don't emit error
     }
   }
 
   /// Save last connected server with authentication
   Future<void> saveLastServer(VpnServerConfig server) async {
-    await _secureStorage.write(
-      key: AppConstants.keyLastServer,
-      value: server.toJson(),
-    );
-    
-    // Also save to preferences for non-sensitive data
-    await _preferences.setString(
-      AppConstants.keyServerList,
-      jsonEncode([server.toMap()]),
-    );
+    try {
+      await _secureStorage.write(
+        key: AppConstants.keyLastServer,
+        value: server.toJson(),
+      );
+      
+      await _preferences.setString(
+        AppConstants.keyServerList,
+        jsonEncode([server.toMap()]),
+      );
+    } catch (e) {
+      debugPrint('Failed to save server: $e');
+    }
   }
 
   /// Get last connected server with authentication
   Future<VpnServerConfig?> getLastServer() async {
-    final serverJson = await _secureStorage.read(key: AppConstants.keyLastServer);
-    if (serverJson != null) {
-      return VpnServerConfig.fromJson(serverJson);
+    try {
+      final serverJson = await _secureStorage.read(key: AppConstants.keyLastServer);
+      if (serverJson != null) {
+        return VpnServerConfig.fromJson(serverJson);
+      }
+    } catch (e) {
+      debugPrint('Failed to get last server: $e');
     }
     return null;
   }
@@ -156,8 +182,6 @@ class ConfigCubit extends Cubit<ConfigState> {
 
     final newConfig = currentState.config.copyWith(server: server);
     await saveConfiguration(newConfig);
-    
-    // Also save to secure storage for auto-connect
     await saveLastServer(server);
   }
 

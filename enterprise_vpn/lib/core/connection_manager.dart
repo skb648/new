@@ -2,11 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
-import '../engine/vpn_engine.dart';
-import '../error/vpn_exceptions.dart';
-import '../network/network_monitor.dart';
-import '../../models/vpn_config.dart';
-import '../../models/vpn_state.dart';
+import '../models/vpn_config.dart';
+import '../models/vpn_state.dart';
+import 'engine/vpn_engine.dart';
+import 'error/vpn_exceptions.dart';
+import 'network/network_monitor.dart';
 
 /// VPN Connection Manager
 /// 
