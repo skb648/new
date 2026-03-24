@@ -94,7 +94,7 @@ class ProxyEngine(
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start proxy engine", e)
             stop()
-            false
+            return false
         }
     }
 
@@ -306,10 +306,10 @@ class ProxyEngine(
 
         } catch (e: SocketTimeoutException) {
             Log.e(TAG, "Handshake timeout - server did not respond")
-            false
+            return false
         } catch (e: Exception) {
             Log.e(TAG, "Handshake failed: ${e.message}", e)
-            false
+            return false
         }
     }
 
