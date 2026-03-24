@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- External storage paths -->
+    <external-path
+        name="external_files"
+        path="." />
+    
+    <!-- Application specific external storage -->
+    <external-files-path
+        name="external_app_files"
+        path="." />
+    
+    <!-- Application specific external cache -->
+    <external-cache-path
+        name="external_app_cache"
+        path="." />
+    
+    <!-- Internal files directory -->
+    <files-path
+        name="internal_files"
+        path="." />
+    
+    <!-- Internal cache directory -->
+    <cache-path
+        name="internal_cache"
+        path="." />
+    
+    <!-- Configuration exports directory -->
+    <files-path
+        name="config_exports"
+        path="exports/" />
+    
+    <!-- Logs directory -->
+    <files-path
+        name="logs"
+        path="logs/" />
+    
+    <!-- Certificates directory -->
+    <files-path
+        name="certificates"
+        path="certs/" />
+    
+    <!-- Downloads directory -->
+    <external-path
+        name="downloads"
+        path="Download/" />
+</paths>

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Base configuration for all connections -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <!-- Domain-specific configuration for VPN servers -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">enterprise-vpn.internal</domain>
+        <domain includeSubdomains="true">vpn.enterprise.com</domain>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="@raw/enterprise_root_ca" />
+        </trust-anchors>
+        <pin-set>
+            <!-- Primary certificate pin -->
+            <pin digest="SHA-256">7HIpactkIAq2Y49orFOOQKurWxmmSFZhBCoQYcRhJ3Y=</pin>
+            <!-- Backup certificate pin -->
+            <pin digest="SHA-256">fwza0LRMXouZHUG8fSd1dce45LB745YpQxvV958V/5c=</pin>
+        </pin-set>
+    </domain-config>
+
+    <!-- Debug configuration (only in debug builds) -->
+    <debug-overrides>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </debug-overrides>
+</network-security-config>

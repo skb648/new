@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_connect"
+        android:shortcutId="quick_connect"
+        android:shortcutLongLabel="@string/shortcut_quick_connect_long"
+        android:shortcutShortLabel="@string/shortcut_quick_connect_short">
+        <intent
+            android:action="com.enterprise.vpn.QUICK_CONNECT"
+            android:targetClass="com.enterprise.vpn.MainActivity"
+            android:targetPackage="com.enterprise.vpn" />
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_disconnect"
+        android:shortcutId="quick_disconnect"
+        android:shortcutLongLabel="@string/shortcut_quick_disconnect_long"
+        android:shortcutShortLabel="@string/shortcut_quick_disconnect_short">
+        <intent
+            android:action="com.enterprise.vpn.QUICK_DISCONNECT"
+            android:targetClass="com.enterprise.vpn.MainActivity"
+            android:targetPackage="com.enterprise.vpn" />
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_settings"
+        android:shortcutId="settings"
+        android:shortcutLongLabel="@string/shortcut_settings_long"
+        android:shortcutShortLabel="@string/shortcut_settings_short">
+        <intent
+            android:action="com.enterprise.vpn.OPEN_SETTINGS"
+            android:targetClass="com.enterprise.vpn.MainActivity"
+            android:targetPackage="com.enterprise.vpn" />
+    </shortcut>
+</shortcuts>
