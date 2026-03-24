@@ -11,7 +11,6 @@ import android.net.NetworkCapabilities
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
-import android.system.OsConstants
 import android.util.Log
 import com.enterprise.vpn.MainActivity
 import com.enterprise.vpn.R
@@ -25,7 +24,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.net.ConnectException
-import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.net.SocketTimeoutException
@@ -33,7 +31,6 @@ import java.net.UnknownHostException
 import java.nio.ByteBuffer
 import java.nio.channels.DatagramChannel
 import java.nio.channels.SocketChannel
-import java.nio.channels.spi.AbstractSelectableChannel
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -41,10 +38,6 @@ import java.util.concurrent.atomic.AtomicReference
  * 
  * CRITICAL: This service implements socket protection to avoid routing loops.
  * All outbound sockets MUST be protected using protect() before connecting.
- * 
- * The protect() method exempts a socket from being routed through the VPN tunnel,
- * preventing the classic Android VPN routing loop where the VPN's own traffic
- * gets captured by the tun interface.
  */
 class EnterpriseVpnService : VpnService() {
 
@@ -52,18 +45,14 @@ class EnterpriseVpnService : VpnService() {
         private const val TAG = "EnterpriseVpnService"
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "enterprise_vpn_channel"
-        private const val CHANNEL_NAME = "VPN Status"
 
-        // Intent actions
         const val ACTION_CONNECT = "com.enterprise.vpn.CONNECT"
         const val ACTION_DISCONNECT = "com.enterprise.vpn.DISCONNECT"
         const val ACTION_GET_STATUS = "com.enterprise.vpn.GET_STATUS"
 
-        // Singleton instance for accessing from other components
         private val _instance = AtomicReference<EnterpriseVpnService?>(null)
         val instance: EnterpriseVpnService? get() = _instance.get()
 
-        // State flows for observation
         private val _statusFlow = MutableStateFlow(VpnStatus())
         val statusFlow: StateFlow<VpnStatus> = _statusFlow.asStateFlow()
 
@@ -74,25 +63,16 @@ class EnterpriseVpnService : VpnService() {
         val trafficFlow: StateFlow<TrafficStats> = _trafficFlow.asStateFlow()
     }
 
-    // VPN Interface
     private var vpnInterface: ParcelFileDescriptor? = null
     private var vpnInputStream: FileInputStream? = null
     private var vpnOutputStream: FileOutputStream? = null
-
-    // Proxy Engine for traffic forwarding
     private var proxyEngine: ProxyEngine? = null
-
-    // Configuration
     private var currentConfig: VpnConfig? = null
 
-    // Coroutine scope for async operations
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-
-    // State tracking
     private var isRunning = false
     private var connectJob: Job? = null
 
-    // Traffic statistics
     private var totalBytesIn: Long = 0
     private var totalBytesOut: Long = 0
     private var lastTrafficUpdate: Long = 0
@@ -131,20 +111,11 @@ class EnterpriseVpnService : VpnService() {
             ACTION_DISCONNECT -> {
                 disconnect()
             }
-            ACTION_GET_STATUS -> {
-                // Status is available via flow
-            }
         }
 
         return START_STICKY
     }
 
-    /**
-     * Connect to VPN with the given configuration
-     * 
-     * This method handles all connection errors and sends detailed error
-     * messages back to Flutter via the event flow.
-     */
     fun connect(config: VpnConfig) {
         if (!config.isValid) {
             sendError("Invalid configuration: server address or port missing")
@@ -166,26 +137,20 @@ class EnterpriseVpnService : VpnService() {
         }
     }
 
-    /**
-     * Perform the actual VPN connection
-     */
     private suspend fun performConnection(config: VpnConfig) {
         updateState(VpnConnectionState.CONNECTING)
         sendEvent(VpnEventType.CONNECTING, "Connecting to ${config.server?.serverIp}:${config.server?.port}")
 
-        // Check network availability
         if (!isNetworkAvailable()) {
             throw VpnConnectionException("No network connection available", "NO_NETWORK")
         }
 
         // Test connection to server BEFORE establishing VPN
-        // This is critical to ensure we can reach the server
         Log.i(TAG, "Testing server connection...")
         val serverReachable = testServerConnection(config)
         if (!serverReachable) {
             throw VpnConnectionException(
-                "Cannot reach server at ${config.server?.serverIp}:${config.server?.port}. " +
-                "Please check the server address and port.",
+                "Cannot reach server at ${config.server?.serverIp}:${config.server?.port}",
                 "SERVER_UNREACHABLE"
             )
         }
@@ -211,55 +176,36 @@ class EnterpriseVpnService : VpnService() {
         updateState(VpnConnectionState.CONNECTED)
         sendEvent(VpnEventType.CONNECTED, "Connected to ${config.server?.name ?: config.server?.serverIp}")
 
-        // Start foreground service
         startForeground(NOTIFICATION_ID, createNotification("Connected to ${config.server?.name ?: "VPN"}"))
-
-        // Start traffic monitoring
         startTrafficMonitoring()
     }
 
-    /**
-     * Test server connection with a PROTECTED socket
-     * 
-     * CRITICAL: We protect the socket before connecting to ensure
-     * the test traffic doesn't get routed through the VPN.
-     */
     private suspend fun testServerConnection(config: VpnConfig): Boolean = withContext(Dispatchers.IO) {
         val server = config.server ?: return@withContext false
         
-        // Create socket based on protocol
-        when (server.protocol.uppercase()) {
-            "TCP" -> testTcpConnection(server.serverIp, server.port)
-            "UDP" -> testUdpConnection(server.serverIp, server.port)
+        when {
+            server.protocol.equals("TCP", ignoreCase = true) -> testTcpConnection(server.serverIp, server.port)
+            server.protocol.equals("UDP", ignoreCase = true) -> testUdpConnection(server.serverIp, server.port)
             else -> testTcpConnection(server.serverIp, server.port)
         }
     }
 
-    /**
-     * Test TCP connection with protected socket
-     * 
-     * @return true if connection successful, false otherwise
-     */
     private fun testTcpConnection(serverIp: String, port: Int): Boolean {
         var socket: Socket? = null
         try {
-            // Create socket
             socket = Socket()
             
             // CRITICAL: Protect the socket BEFORE connecting
-            // This exempts the socket from VPN routing
             if (!protect(socket)) {
                 Log.e(TAG, "Failed to protect TCP test socket")
                 return false
             }
             Log.d(TAG, "TCP test socket protected successfully")
 
-            // Set socket options
-            socket.soTimeout = 10000 // 10 second timeout
+            socket.soTimeout = 10000
             socket.tcpNoDelay = true
             socket.keepAlive = true
 
-            // Connect to server
             val address = InetSocketAddress(serverIp, port)
             Log.d(TAG, "Attempting TCP connection to $serverIp:$port")
             socket.connect(address, 10000)
@@ -280,34 +226,24 @@ class EnterpriseVpnService : VpnService() {
             Log.e(TAG, "TCP test failed - ${e.javaClass.simpleName}: ${e.message}", e)
             return false
         } finally {
-            try {
-                socket?.close()
-            } catch (e: Exception) {
-                Log.w(TAG, "Error closing test socket", e)
-            }
+            try { socket?.close() } catch (e: Exception) { }
         }
     }
 
-    /**
-     * Test UDP connection with protected socket
-     */
     private fun testUdpConnection(serverIp: String, port: Int): Boolean {
         var channel: DatagramChannel? = null
         try {
             channel = DatagramChannel.open()
             
-            // CRITICAL: Protect the channel BEFORE connecting
             if (!protect(channel.socket())) {
                 Log.e(TAG, "Failed to protect UDP test socket")
                 return false
             }
             Log.d(TAG, "UDP test socket protected successfully")
 
-            // Connect to server
             val address = InetSocketAddress(serverIp, port)
             channel.connect(address)
 
-            // Send a small probe packet
             val buffer = ByteBuffer.wrap(byteArrayOf(0))
             channel.send(buffer, address)
 
@@ -318,35 +254,15 @@ class EnterpriseVpnService : VpnService() {
             Log.e(TAG, "UDP test failed - ${e.javaClass.simpleName}: ${e.message}", e)
             return false
         } finally {
-            try {
-                channel?.close()
-            } catch (e: Exception) {
-                Log.w(TAG, "Error closing UDP test channel", e)
-            }
+            try { channel?.close() } catch (e: Exception) { }
         }
     }
 
-    /**
-     * Create a protected TCP socket channel for the proxy engine
-     * 
-     * This method creates and protects a TCP socket before connecting.
-     * Call this from ProxyEngine to create outbound connections.
-     * 
-     * @param serverIp The server IP address
-     * @param port The server port
-     * @param timeoutMs Connection timeout in milliseconds
-     * @return Connected SocketChannel or null if failed
-     */
-    fun createProtectedTcpChannel(
-        serverIp: String, 
-        port: Int, 
-        timeoutMs: Int = 30000
-    ): SocketChannel? {
+    fun createProtectedTcpChannel(serverIp: String, port: Int, timeoutMs: Int = 30000): SocketChannel? {
         return try {
             val channel = SocketChannel.open()
             channel.configureBlocking(true)
             
-            // CRITICAL: Protect BEFORE connecting
             if (!protect(channel.socket())) {
                 Log.e(TAG, "Failed to protect TCP channel for $serverIp:$port")
                 channel.close()
@@ -354,12 +270,10 @@ class EnterpriseVpnService : VpnService() {
             }
             Log.d(TAG, "TCP channel protected: $serverIp:$port")
 
-            // Set socket options
             channel.socket().soTimeout = timeoutMs
             channel.socket().tcpNoDelay = true
             channel.socket().keepAlive = true
 
-            // Connect
             val address = InetSocketAddress(serverIp, port)
             channel.socket().connect(address, timeoutMs)
 
@@ -377,72 +291,10 @@ class EnterpriseVpnService : VpnService() {
         }
     }
 
-    /**
-     * Create a protected TCP socket for the proxy engine
-     * 
-     * @param serverIp The server IP address
-     * @param port The server port
-     * @param timeoutMs Connection timeout in milliseconds
-     * @return Connected Socket or null if failed
-     */
-    fun createProtectedTcpSocket(
-        serverIp: String,
-        port: Int,
-        timeoutMs: Int = 30000
-    ): Socket? {
-        return try {
-            val socket = Socket()
-            
-            // CRITICAL: Protect BEFORE connecting
-            if (!protect(socket)) {
-                Log.e(TAG, "Failed to protect TCP socket for $serverIp:$port")
-                socket.close()
-                return null
-            }
-            Log.d(TAG, "TCP socket protected: $serverIp:$port")
-
-            // Set socket options
-            socket.soTimeout = timeoutMs
-            socket.tcpNoDelay = true
-            socket.keepAlive = true
-            socket.receiveBufferSize = 65536
-            socket.sendBufferSize = 65536
-
-            // Connect
-            val address = InetSocketAddress(serverIp, port)
-            socket.connect(address, timeoutMs)
-
-            if (socket.isConnected) {
-                Log.i(TAG, "Protected TCP socket connected: $serverIp:$port")
-                socket
-            } else {
-                Log.e(TAG, "Protected TCP socket not connected: $serverIp:$port")
-                socket.close()
-                null
-            }
-        } catch (e: UnknownHostException) {
-            Log.e(TAG, "Unknown host: $serverIp", e)
-            null
-        } catch (e: ConnectException) {
-            Log.e(TAG, "Connection refused: $serverIp:$port", e)
-            null
-        } catch (e: SocketTimeoutException) {
-            Log.e(TAG, "Connection timeout: $serverIp:$port", e)
-            null
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to create protected TCP socket: ${e.message}", e)
-            null
-        }
-    }
-
-    /**
-     * Create a protected UDP channel for the proxy engine
-     */
     fun createProtectedUdpChannel(serverIp: String, port: Int): DatagramChannel? {
         return try {
             val channel = DatagramChannel.open()
             
-            // CRITICAL: Protect BEFORE connecting
             if (!protect(channel.socket())) {
                 Log.e(TAG, "Failed to protect UDP channel for $serverIp:$port")
                 channel.close()
@@ -450,7 +302,6 @@ class EnterpriseVpnService : VpnService() {
             }
             Log.d(TAG, "UDP channel protected: $serverIp:$port")
 
-            // Connect
             val address = InetSocketAddress(serverIp, port)
             channel.connect(address)
 
@@ -462,33 +313,23 @@ class EnterpriseVpnService : VpnService() {
         }
     }
 
-    /**
-     * Establish the VPN interface
-     */
     private fun establishVpn(config: VpnConfig): ParcelFileDescriptor? {
         return try {
             val builder = Builder()
                 .setSession("Enterprise VPN")
                 .setMtu(config.mtu)
 
-            // Add addresses
             builder.addAddress("10.0.0.2", 32)
             builder.addAddress("fd00::2", 128)
 
-            // Add routes (route all traffic through VPN)
             builder.addRoute("0.0.0.0", 0)
             if (config.ipv6Enabled) {
                 builder.addRoute("::", 0)
             }
 
-            // Add DNS servers
             if (config.customDns.isNotEmpty()) {
                 config.customDns.forEach { dns ->
-                    try {
-                        builder.addDnsServer(dns)
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Failed to add DNS server: $dns", e)
-                    }
+                    try { builder.addDnsServer(dns) } catch (e: Exception) { }
                 }
             } else {
                 builder.addDnsServer("8.8.8.8")
@@ -496,18 +337,12 @@ class EnterpriseVpnService : VpnService() {
                 builder.addDnsServer("1.1.1.1")
             }
 
-            // Handle split tunneling
             if (config.splitTunnelEnabled && config.excludedApps.isNotEmpty()) {
                 config.excludedApps.forEach { packageName ->
-                    try {
-                        builder.addAllowedApplication(packageName)
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Failed to exclude app: $packageName", e)
-                    }
+                    try { builder.addAllowedApplication(packageName) } catch (e: Exception) { }
                 }
             }
 
-            // Establish the interface
             val interfaceFd = builder.establish()
             Log.i(TAG, "VPN interface established: mtu=${config.mtu}")
             interfaceFd
@@ -518,9 +353,6 @@ class EnterpriseVpnService : VpnService() {
         }
     }
 
-    /**
-     * Disconnect from VPN
-     */
     fun disconnect() {
         Log.i(TAG, "Disconnecting VPN")
         
@@ -536,46 +368,25 @@ class EnterpriseVpnService : VpnService() {
         stopSelf()
     }
 
-    /**
-     * Cleanup resources
-     */
     private fun cleanup() {
         isRunning = false
 
-        // Stop proxy engine
         proxyEngine?.stop()
         proxyEngine = null
 
-        // Close VPN interface
-        try {
-            vpnInputStream?.close()
-            vpnInputStream = null
-        } catch (e: Exception) {
-            Log.w(TAG, "Error closing VPN input stream", e)
-        }
+        try { vpnInputStream?.close() } catch (e: Exception) { }
+        vpnInputStream = null
 
-        try {
-            vpnOutputStream?.close()
-            vpnOutputStream = null
-        } catch (e: Exception) {
-            Log.w(TAG, "Error closing VPN output stream", e)
-        }
+        try { vpnOutputStream?.close() } catch (e: Exception) { }
+        vpnOutputStream = null
 
-        try {
-            vpnInterface?.close()
-            vpnInterface = null
-        } catch (e: Exception) {
-            Log.w(TAG, "Error closing VPN interface", e)
-        }
+        try { vpnInterface?.close() } catch (e: Exception) { }
+        vpnInterface = null
 
-        // Reset traffic stats
         totalBytesIn = 0
         totalBytesOut = 0
     }
 
-    /**
-     * Handle connection errors with detailed error messages
-     */
     private fun handleConnectionError(e: Throwable) {
         val errorMessage = when (e) {
             is VpnConnectionException -> e.message ?: "Connection failed"
@@ -591,9 +402,6 @@ class EnterpriseVpnService : VpnService() {
         updateState(VpnConnectionState.ERROR, errorMessage)
     }
 
-    /**
-     * Update VPN state
-     */
     private fun updateState(state: VpnConnectionState, errorMessage: String? = null) {
         val currentStatus = _statusFlow.value
         val newStatus = currentStatus.copy(
@@ -608,44 +416,29 @@ class EnterpriseVpnService : VpnService() {
             } else currentStatus.connectedAt
         )
         _statusFlow.value = newStatus
-
-        // Broadcast to Flutter
         broadcastStatus(newStatus)
     }
 
-    /**
-     * Send event to Flutter
-     */
     private fun sendEvent(type: VpnEventType, message: String, data: Map<String, Any?>? = null) {
         val event = VpnEvent(type, message, System.currentTimeMillis(), data)
         _eventFlow.value = event
 
-        // Broadcast to Flutter via intent
         val intent = Intent("com.enterprise.vpn.EVENT")
         intent.putExtra("type", type.name)
         intent.putExtra("message", message)
         sendBroadcast(intent)
     }
 
-    /**
-     * Send error event
-     */
     private fun sendError(message: String) {
         sendEvent(VpnEventType.ERROR, message)
     }
 
-    /**
-     * Broadcast status to Flutter
-     */
     private fun broadcastStatus(status: VpnStatus) {
         val intent = Intent("com.enterprise.vpn.STATUS")
-        intent.putExtra("status", status.toJson())
+        intent.putExtra("status", status.toMap().toString())
         sendBroadcast(intent)
     }
 
-    /**
-     * Update traffic statistics
-     */
     fun updateTraffic(bytesIn: Long, bytesOut: Long) {
         totalBytesIn += bytesIn
         totalBytesOut += bytesOut
@@ -665,7 +458,6 @@ class EnterpriseVpnService : VpnService() {
             )
             _trafficFlow.value = stats
 
-            // Update status with traffic info
             val currentStatus = _statusFlow.value
             _statusFlow.value = currentStatus.copy(
                 bytesIn = totalBytesIn,
@@ -680,18 +472,12 @@ class EnterpriseVpnService : VpnService() {
         }
     }
 
-    /**
-     * Start traffic monitoring
-     */
     private fun startTrafficMonitoring() {
         lastTrafficUpdate = System.currentTimeMillis()
         lastBytesIn = 0
         lastBytesOut = 0
     }
 
-    /**
-     * Check if network is available
-     */
     private fun isNetworkAvailable(): Boolean {
         val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val network = connectivityManager.activeNetwork ?: return false
@@ -699,32 +485,21 @@ class EnterpriseVpnService : VpnService() {
         return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 
-    /**
-     * Create notification channel
-     */
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                CHANNEL_NAME,
+                "VPN Status",
                 NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "VPN connection status"
-                setShowBadge(false)
-            }
-
+            )
             val notificationManager = getSystemService(NotificationManager::class.java)
             notificationManager.createNotificationChannel(channel)
         }
     }
 
-    /**
-     * Create notification
-     */
     private fun createNotification(contentText: String): Notification {
         val pendingIntent = PendingIntent.getActivity(
-            this,
-            0,
+            this, 0,
             packageManager.getLaunchIntentForPackage(packageName),
             PendingIntent.FLAG_IMMUTABLE
         )
@@ -749,31 +524,8 @@ class EnterpriseVpnService : VpnService() {
         }
     }
 
-    /**
-     * Get VPN input stream for reading packets
-     */
     fun getVpnInputStream(): FileInputStream? = vpnInputStream
-
-    /**
-     * Get VPN output stream for writing packets
-     */
     fun getVpnOutputStream(): FileOutputStream? = vpnOutputStream
-
-    /**
-     * Check if VPN is running
-     */
     fun isVpnRunning(): Boolean = isRunning
-
-    /**
-     * Get current configuration
-     */
     fun getCurrentConfig(): VpnConfig? = currentConfig
 }
-
-/**
- * Custom exception for VPN connection errors
- */
-class VpnConnectionException(
-    message: String,
-    val errorCode: String? = null
-) : Exception(message)
