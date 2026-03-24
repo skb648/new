@@ -7,6 +7,7 @@ import android.net.VpnService
 import android.os.Build
 import android.util.Log
 import com.enterprise.vpn.model.*
+import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -41,7 +42,7 @@ object VpnServiceManager : MethodChannel.MethodCallHandler {
         Log.i(TAG, "VPN Service Manager initialized")
     }
 
-    override fun onMethodCall(call: MethodChannel.MethodCall, result: MethodChannel.Result) {
+    override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         Log.d(TAG, "Method called: ${call.method}")
         
         when (call.method) {
@@ -59,7 +60,7 @@ object VpnServiceManager : MethodChannel.MethodCallHandler {
     }
 
     @Suppress("UNCHECKED_CAST")
-    private fun handleConnect(call: MethodChannel.MethodCall, result: MethodChannel.Result) {
+    private fun handleConnect(call: MethodCall, result: MethodChannel.Result) {
         try {
             val configMap = call.arguments as? Map<String, Any?>
             if (configMap == null) {
@@ -69,7 +70,7 @@ object VpnServiceManager : MethodChannel.MethodCallHandler {
             
             val config = VpnConfig.fromMap(configMap)
             
-            if (!config.isValid) {
+            if (!config.isValid()) {
                 result.error("CONFIG_INVALID", "Invalid VPN configuration", null)
                 return
             }
@@ -176,7 +177,7 @@ object VpnServiceManager : MethodChannel.MethodCallHandler {
     }
 
     @Suppress("UNCHECKED_CAST")
-    private fun handleSetHttpHeaders(call: MethodChannel.MethodCall, result: MethodChannel.Result) {
+    private fun handleSetHttpHeaders(call: MethodCall, result: MethodChannel.Result) {
         try {
             result.success(true)
         } catch (e: Exception) {
@@ -186,7 +187,7 @@ object VpnServiceManager : MethodChannel.MethodCallHandler {
     }
 
     @Suppress("UNCHECKED_CAST")
-    private fun handleSetSni(call: MethodChannel.MethodCall, result: MethodChannel.Result) {
+    private fun handleSetSni(call: MethodCall, result: MethodChannel.Result) {
         try {
             result.success(true)
         } catch (e: Exception) {
@@ -196,7 +197,7 @@ object VpnServiceManager : MethodChannel.MethodCallHandler {
     }
 
     @Suppress("UNCHECKED_CAST")
-    private fun handleConfigure(call: MethodChannel.MethodCall, result: MethodChannel.Result) {
+    private fun handleConfigure(call: MethodCall, result: MethodChannel.Result) {
         try {
             val configMap = call.arguments as? Map<String, Any?>
             if (configMap == null) {

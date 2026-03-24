@@ -3,7 +3,6 @@ package com.enterprise.vpn.proxy
 import android.util.Log
 import com.enterprise.vpn.model.*
 import com.enterprise.vpn.service.EnterpriseVpnService
-import com.enterprise.vpn.service.VpnConnectionException
 import kotlinx.coroutines.*
 import java.io.IOException
 import java.net.*
@@ -144,7 +143,9 @@ class ProxyEngine(
             val socket = channel.socket()
             val protected = vpnService.protect(socket)
             if (!protected) {
-                Log.e(TAG, "CRITICAL: Failed to protect TCP socket - aborting connection")
+                val errorMsg = "CRITICAL: Failed to protect TCP socket - VPN protect() returned false"
+                Log.e(TAG, errorMsg)
+                sendErrorToFlutter(errorMsg, "PROTECT_FAILED")
                 channel.close()
                 return null
             }
@@ -167,33 +168,84 @@ class ProxyEngine(
                 
                 // Perform handshake
                 if (!performHandshake(channel)) {
-                    Log.e(TAG, "Handshake failed")
+                    val errorMsg = "Handshake failed - server did not respond correctly"
+                    Log.e(TAG, errorMsg)
+                    sendErrorToFlutter(errorMsg, "HANDSHAKE_FAILED")
                     channel.close()
                     return null
                 }
                 
                 return channel
             } else {
-                Log.e(TAG, "TCP connection not established")
+                val errorMsg = "TCP connection not established after connect() call"
+                Log.e(TAG, errorMsg)
+                sendErrorToFlutter(errorMsg, "CONNECTION_FAILED")
                 channel.close()
                 return null
             }
 
         } catch (e: UnknownHostException) {
-            Log.e(TAG, "DNS resolution failed for $serverIp", e)
+            val errorMsg = "DNS resolution failed for $serverIp: ${e.message}"
+            Log.e(TAG, errorMsg, e)
+            sendErrorToFlutter(errorMsg, "DNS_ERROR")
             null
         } catch (e: ConnectException) {
-            Log.e(TAG, "Connection refused by $serverIp:$port", e)
+            val errorMsg = "Connection REFUSED by $serverIp:$port - Server not listening or firewall blocking: ${e.message}"
+            Log.e(TAG, errorMsg, e)
+            sendErrorToFlutter(errorMsg, "CONNECTION_REFUSED")
             null
         } catch (e: SocketTimeoutException) {
-            Log.e(TAG, "Connection timeout to $serverIp:$port", e)
+            val errorMsg = "Connection TIMEOUT to $serverIp:$port - Server not responding after ${CONNECTION_TIMEOUT_MS}ms: ${e.message}"
+            Log.e(TAG, errorMsg, e)
+            sendErrorToFlutter(errorMsg, "CONNECTION_TIMEOUT")
+            null
+        } catch (e: java.net.NoRouteToHostException) {
+            val errorMsg = "No route to host $serverIp - Network unreachable: ${e.message}"
+            Log.e(TAG, errorMsg, e)
+            sendErrorToFlutter(errorMsg, "NO_ROUTE")
+            null
+        } catch (e: java.nio.channels.UnresolvedAddressException) {
+            val errorMsg = "Unresolved address: $serverIp - Invalid IP/hostname: ${e.message}"
+            Log.e(TAG, errorMsg, e)
+            sendErrorToFlutter(errorMsg, "UNRESOLVED_ADDRESS")
+            null
+        } catch (e: SecurityException) {
+            val errorMsg = "Security exception - Permission denied: ${e.message}"
+            Log.e(TAG, errorMsg, e)
+            sendErrorToFlutter(errorMsg, "PERMISSION_DENIED")
             null
         } catch (e: IOException) {
-            Log.e(TAG, "IO error connecting to $serverIp:$port", e)
+            val errorMsg = "IO error connecting to $serverIp:$port: ${e.message}"
+            Log.e(TAG, errorMsg, e)
+            sendErrorToFlutter(errorMsg, "IO_ERROR")
             null
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to create TCP connection: ${e.message}", e)
+            val errorMsg = "Unexpected error connecting to $serverIp:$port: ${e.javaClass.simpleName} - ${e.message}"
+            Log.e(TAG, errorMsg, e)
+            sendErrorToFlutter(errorMsg, "UNKNOWN_ERROR")
             null
+        }
+    }
+
+    /**
+     * Send detailed error to Flutter via VpnService
+     */
+    private fun sendErrorToFlutter(message: String, code: String) {
+        try {
+            // Create error event
+            val event = VpnEvent(
+                type = VpnEventType.ERROR,
+                message = "[$code] $message",
+                data = mapOf("errorCode" to code, "originalMessage" to message)
+            )
+            
+            // Emit through the companion object's StateFlow
+            // This will be picked up by VpnServiceManager and sent to Flutter
+            EnterpriseVpnService.updateEvent(event)
+            
+            Log.e(TAG, "🔥 ERROR SENT TO FLUTTER: [$code] $message")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to send error to Flutter: ${e.message}")
         }
     }
 

@@ -11,6 +11,11 @@
     
     <!-- Foreground Service Permission (Android 9+) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    
+    <!-- Android 14+ Foreground Service Types - CRITICAL for VPN apps -->
+    <!-- FOREGROUND_SERVICE_CONNECTED_DEVICE is required for VPN services on Android 14+ -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <!-- Alternative: FOREGROUND_SERVICE_SPECIAL_USE for Android 14+ -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     
     <!-- Boot Completed Permission for Auto-start -->
@@ -18,6 +23,9 @@
     
     <!-- Wake Lock for keeping connection alive -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    
+    <!-- Android 12+ Exact Alarm Permission (for scheduled reconnections) -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
     <application
         android:label="Enterprise VPN"
@@ -47,12 +55,13 @@
             </intent-filter>
         </activity>
         
-        <!-- VPN Service -->
+        <!-- VPN Service - Android 14+ compatible with foregroundServiceType -->
         <service
             android:name=".service.EnterpriseVpnService"
             android:enabled="true"
             android:exported="false"
-            android:permission="android.permission.BIND_VPN_SERVICE">
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            android:foregroundServiceType="connectedDevice|specialUse">
             <intent-filter>
                 <action android:name="android.net.VpnService" />
             </intent-filter>

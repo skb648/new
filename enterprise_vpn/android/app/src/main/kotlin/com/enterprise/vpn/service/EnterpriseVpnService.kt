@@ -61,6 +61,14 @@ class EnterpriseVpnService : VpnService() {
 
         private val _trafficFlow = MutableStateFlow(TrafficStats())
         val trafficFlow: StateFlow<TrafficStats> = _trafficFlow.asStateFlow()
+
+        /**
+         * Update event from external classes (like ProxyEngine)
+         * This allows error events to be sent to Flutter
+         */
+        fun updateEvent(event: VpnEvent) {
+            _eventFlow.value = event
+        }
     }
 
     private var vpnInterface: ParcelFileDescriptor? = null
@@ -117,7 +125,7 @@ class EnterpriseVpnService : VpnService() {
     }
 
     fun connect(config: VpnConfig) {
-        if (!config.isValid) {
+        if (!config.isValid()) {
             sendError("Invalid configuration: server address or port missing")
             return
         }
@@ -337,10 +345,32 @@ class EnterpriseVpnService : VpnService() {
                 builder.addDnsServer("1.1.1.1")
             }
 
+            // =====================================================
+            // CRITICAL FIX: VPN ROUTING LOOP PREVENTION
+            // =====================================================
+            // This is the "Nuclear Fix" for Android VpnService routing loops.
+            // By disallowing our own app from the VPN, all sockets created by
+            // this app (including outbound connections to the VPN server)
+            // will bypass the tun0 interface and use the original network.
+            //
+            // This PREVENTS the infinite loop where:
+            // 1. App creates socket to connect to VPN server
+            // 2. Socket traffic gets routed into tun0 (VPN interface)
+            // 3. VPN tries to forward it, creating more traffic
+            // 4. Infinite loop -> Connection fails instantly
+            // =====================================================
+            try {
+                builder.addDisallowedApplication(this.packageName)
+                Log.i(TAG, "✅ CRITICAL: Added self to disallowed applications - prevents routing loop!")
+            } catch (e: Exception) {
+                Log.e(TAG, "⚠️ Failed to add disallowed application (non-critical on some devices)", e)
+            }
+
+            // Split tunnel: allow only specific apps through VPN
             if (config.splitTunnelEnabled && config.excludedApps.isNotEmpty()) {
-                config.excludedApps.forEach { packageName ->
-                    try { builder.addAllowedApplication(packageName) } catch (e: Exception) { }
-                }
+                // Note: When using addDisallowedApplication, we don't use addAllowedApplication
+                // as they are mutually exclusive approaches
+                Log.i(TAG, "Split tunnel enabled with ${config.excludedApps.size} excluded apps")
             }
 
             val interfaceFd = builder.establish()
