@@ -359,7 +359,17 @@ class VpnService {
 
       // Build config map with explicit values (avoid null server issues)
       final configMap = _buildConfigMap(config);
-      debugPrint('Sending configMap to Kotlin: $configMap');
+      
+      // 🔥 CRITICAL: Print exact values being sent to MethodChannel
+      final currentIp = config.server?.serverIp ?? '';
+      final currentPort = config.server?.port ?? 0;
+      print('========================================');
+      print('🔥 STARTING VPN WITH:');
+      print('🔥 IP: "$currentIp"');
+      print('🔥 Port: $currentPort');
+      print('🔥 Protocol: ${config.server?.protocol}');
+      print('🔥 configMap: $configMap');
+      print('========================================');
       
       final result = await _methodChannel.invokeMethod<Map<dynamic, dynamic>>(
         AppConstants.methodConnect,

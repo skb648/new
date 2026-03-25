@@ -32,6 +32,7 @@ class _AdvancedConfigSheetState extends State<AdvancedConfigSheet>
   bool _sniEnabled = true;
   String _selectedProtocol = 'TCP';
   bool _obscurePassword = true;
+  bool _isSaving = false;
 
   @override
   void initState() {
@@ -90,11 +91,14 @@ class _AdvancedConfigSheetState extends State<AdvancedConfigSheet>
     super.dispose();
   }
 
-  void _saveConfiguration() {
+  Future<void> _saveConfiguration() async {
+    if (_isSaving) return;
+    
     HapticFeedback.mediumImpact();
 
     // Validate inputs
-    if (_serverIpController.text.isEmpty) {
+    final serverIp = _serverIpController.text.trim();
+    if (serverIp.isEmpty) {
       _showError('Please enter a server IP address');
       return;
     }
@@ -114,25 +118,28 @@ class _AdvancedConfigSheetState extends State<AdvancedConfigSheet>
       return;
     }
 
+    setState(() => _isSaving = true);
+
     // Create server config with authentication
     final serverConfig = VpnServerConfig(
       id: 'custom_${DateTime.now().millisecondsSinceEpoch}',
       name: 'Custom Server',
-      serverIp: _serverIpController.text.trim(),
+      serverIp: serverIp,
       port: port,
       protocol: _selectedProtocol,
       username: username,
       password: password,
     );
 
-    // Debug logging
+    // 🔥 CRITICAL DEBUG: Log what we're about to save
     debugPrint('========================================');
-    debugPrint('AdvancedConfigSheet._saveConfiguration()');
-    debugPrint('serverConfig.id: ${serverConfig.id}');
-    debugPrint('serverConfig.serverIp: ${serverConfig.serverIp}');
-    debugPrint('serverConfig.port: ${serverConfig.port}');
-    debugPrint('serverConfig.protocol: ${serverConfig.protocol}');
-    debugPrint('serverConfig.isValid: ${serverConfig.serverIp.isNotEmpty && serverConfig.port > 0}');
+    debugPrint('🔥 AdvancedConfigSheet._saveConfiguration()');
+    debugPrint('🔥 serverConfig.id: ${serverConfig.id}');
+    debugPrint('🔥 serverConfig.serverIp: "${serverConfig.serverIp}"');
+    debugPrint('🔥 serverConfig.port: ${serverConfig.port}');
+    debugPrint('🔥 serverConfig.protocol: ${serverConfig.protocol}');
+    debugPrint('🔥 serverIp.isEmpty: ${serverConfig.serverIp.isEmpty}');
+    debugPrint('🔥 serverConfig.isValid: ${serverConfig.serverIp.isNotEmpty && serverConfig.port > 0}');
     debugPrint('========================================');
 
     // Create SNI config
@@ -140,6 +147,7 @@ class _AdvancedConfigSheetState extends State<AdvancedConfigSheet>
     if (_sniController.text.isNotEmpty) {
       if (!AppConstants.sniPattern.hasMatch(_sniController.text)) {
         _showError('Invalid SNI format');
+        setState(() => _isSaving = false);
         return;
       }
       sniConfig = SniConfig(
@@ -165,35 +173,58 @@ class _AdvancedConfigSheetState extends State<AdvancedConfigSheet>
       httpHeaders: headers,
     );
 
-    // Debug logging for final config
+    // 🔥 CRITICAL DEBUG: Log the final config
     debugPrint('========================================');
-    debugPrint('Final VpnConfig created:');
-    debugPrint('config.isValid: ${config.isValid}');
-    debugPrint('config.server: ${config.server}');
+    debugPrint('🔥 Final VpnConfig created:');
+    debugPrint('🔥 config.isValid: ${config.isValid}');
+    debugPrint('🔥 config.server: ${config.server}');
+    debugPrint('🔥 config.server?.serverIp: "${config.server?.serverIp}"');
+    debugPrint('🔥 config.server?.port: ${config.server?.port}');
     debugPrint('========================================');
 
-    // Save configuration
-    context.read<ConfigCubit>().saveConfiguration(config);
+    // ✅ FIX: AWAIT the save to ensure it completes
+    try {
+      await context.read<ConfigCubit>().saveConfiguration(config);
+      
+      debugPrint('========================================');
+      debugPrint('🔥 ConfigCubit.saveConfiguration() COMPLETED');
+      debugPrint('========================================');
+    } catch (e) {
+      debugPrint('🔥 ERROR saving configuration: $e');
+      setState(() => _isSaving = false);
+      _showError('Failed to save configuration: $e');
+      return;
+    }
+
+    setState(() => _isSaving = false);
 
     // Show success message
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Configuration saved successfully'),
-        backgroundColor: AppTheme.success,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Configuration saved successfully'),
+          backgroundColor: AppTheme.success,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          action: SnackBarAction(
+            label: 'Connect',
+            textColor: Colors.white,
+            onPressed: () {
+              Navigator.of(context).pop();
+              // ✅ FIX: Pass the local config directly, not from state
+              debugPrint('========================================');
+              debugPrint('🔥 SnackBar Connect pressed - using local config');
+              debugPrint('🔥 IP: ${config.server?.serverIp}');
+              debugPrint('🔥 Port: ${config.server?.port}');
+              debugPrint('========================================');
+              context.read<VpnCubit>().connect(config);
+            },
+          ),
         ),
-        action: SnackBarAction(
-          label: 'Connect',
-          textColor: Colors.white,
-          onPressed: () {
-            Navigator.of(context).pop();
-            context.read<VpnCubit>().connect(config);
-          },
-        ),
-      ),
-    );
+      );
+    }
   }
 
   void _showError(String message) {
@@ -341,7 +372,7 @@ class _AdvancedConfigSheetState extends State<AdvancedConfigSheet>
                   width: double.infinity,
                   height: 56,
                   child: ElevatedButton(
-                    onPressed: _saveConfiguration,
+                    onPressed: _isSaving ? null : _saveConfiguration,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppTheme.primaryColor,
                       foregroundColor: Colors.white,
@@ -350,13 +381,22 @@ class _AdvancedConfigSheetState extends State<AdvancedConfigSheet>
                         borderRadius: BorderRadius.circular(16),
                       ),
                     ),
-                    child: const Text(
-                      'Save Configuration',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+                    child: _isSaving
+                        ? const SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Text(
+                            'Save Configuration',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                   ),
                 ),
               ),

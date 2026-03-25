@@ -43,7 +43,6 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   void _showAdvancedConfig() {
-    // ✅ FIX: Add SnackBar for immediate feedback
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: const Text('Opening Advanced Configuration...'),
@@ -70,7 +69,6 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   void _toggleVpn() {
-    // ✅ FIX: Add immediate SnackBar feedback
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: const Text('Power button pressed!'),
@@ -85,14 +83,14 @@ class _DashboardScreenState extends State<DashboardScreen>
     
     HapticFeedback.mediumImpact();
     
-    // Get the VPN cubit - state is always VpnReady now
+    // Get the VPN cubit and config cubit
     final vpnCubit = context.read<VpnCubit>();
     final configCubit = context.read<ConfigCubit>();
     
-    // Debug logging for config state
+    // 🔥 CRITICAL DEBUG: Log what we're reading from state
     debugPrint('========================================');
-    debugPrint('DashboardScreen._toggleVpn() - CHECKING CONFIG STATE');
-    debugPrint('configCubit.state type: ${configCubit.state.runtimeType}');
+    debugPrint('🔥 DashboardScreen._toggleVpn() CALLED');
+    debugPrint('🔥 configCubit.state type: ${configCubit.state.runtimeType}');
     
     // Get current VPN status
     final currentState = vpnCubit.state;
@@ -107,23 +105,24 @@ class _DashboardScreenState extends State<DashboardScreen>
     VpnConfig config;
     final configState = configCubit.state;
     
-    debugPrint('configState is ConfigLoaded: ${configState is ConfigLoaded}');
+    debugPrint('🔥 configState is ConfigLoaded: ${configState is ConfigLoaded}');
     
     if (configState is ConfigLoaded) {
       config = configState.config;
-      // Debug logging
+      // 🔥 CRITICAL DEBUG: Log the config we got from state
       debugPrint('========================================');
-      debugPrint('DashboardScreen._toggleVpn() - Config Loaded');
-      debugPrint('config.isValid: ${config.isValid}');
-      debugPrint('config.server: ${config.server}');
-      debugPrint('config.server?.serverIp: ${config.server?.serverIp}');
-      debugPrint('config.server?.port: ${config.server?.port}');
+      debugPrint('🔥 Config from ConfigCubit.state:');
+      debugPrint('🔥 config.isValid: ${config.isValid}');
+      debugPrint('🔥 config.server: ${config.server}');
+      debugPrint('🔥 config.server?.serverIp: "${config.server?.serverIp}"');
+      debugPrint('🔥 config.server?.port: ${config.server?.port}');
+      debugPrint('🔥 config.server?.id: ${config.server?.id}');
       debugPrint('========================================');
     } else {
       config = VpnConfig.empty();
       debugPrint('========================================');
-      debugPrint('DashboardScreen._toggleVpn() - Config NOT Loaded, using empty');
-      debugPrint('configCubit.state: ${configCubit.state}');
+      debugPrint('🔥 Config NOT Loaded - using empty config!');
+      debugPrint('🔥 configCubit.state: ${configCubit.state}');
       debugPrint('========================================');
     }
 
@@ -135,23 +134,28 @@ class _DashboardScreenState extends State<DashboardScreen>
                currentStatus.state == VpnConnectionState.noNetwork) {
       // Check if config is valid
       if (config.isValid && config.server != null) {
-        debugPrint('Calling vpnCubit.connect() with valid config');
+        debugPrint('========================================');
+        debugPrint('🔥 CALLING vpnCubit.connect() with config:');
+        debugPrint('🔥 IP: "${config.server?.serverIp}"');
+        debugPrint('🔥 Port: ${config.server?.port}');
+        debugPrint('🔥 Protocol: ${config.server?.protocol}');
+        debugPrint('========================================');
         vpnCubit.connect(config);
       } else {
         // Show config sheet if no valid config
-        debugPrint('Config invalid or server is null:');
-        debugPrint('  config.isValid: ${config.isValid}');
-        debugPrint('  config.server: ${config.server}');
-        debugPrint('  config.server?.serverIp: ${config.server?.serverIp}');
-        debugPrint('  config.server?.port: ${config.server?.port}');
-        debugPrint('Showing config sheet...');
+        debugPrint('========================================');
+        debugPrint('🔥 CONFIG INVALID - showing config sheet');
+        debugPrint('🔥 config.isValid: ${config.isValid}');
+        debugPrint('🔥 config.server: ${config.server}');
+        debugPrint('🔥 config.server?.serverIp: "${config.server?.serverIp}"');
+        debugPrint('🔥 config.server?.port: ${config.server?.port}');
+        debugPrint('========================================');
         _showAdvancedConfig();
       }
     } else if (currentStatus.state == VpnConnectionState.connecting) {
       // Allow cancel by disconnecting
       vpnCubit.disconnect();
     }
-    // If already disconnecting, do nothing
   }
 
   @override
@@ -167,17 +171,14 @@ class _DashboardScreenState extends State<DashboardScreen>
         body: BlocConsumer<VpnCubit, VpnState>(
           listener: (context, state) {
             if (state is VpnError) {
-              // Show AlertDialog with detailed error
               _showErrorDialog(context, state.message, state.code);
             } else if (state is VpnReady && 
                        state.status.state == VpnConnectionState.error &&
                        state.status.errorMessage != null) {
-              // Show AlertDialog with error from status
               _showErrorDialog(context, state.status.errorMessage!, 'CONNECTION_ERROR');
             }
           },
           builder: (context, vpnState) {
-            // ✅ FIX: Always get status, default to disconnected
             VpnStatus status;
             VpnConfig? config;
             
@@ -190,7 +191,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                 errorMessage: vpnState.message,
               );
             } else {
-              // Default to disconnected state - UI always works
               status = VpnStatus.initial();
             }
 
@@ -302,7 +302,6 @@ class _DashboardScreenState extends State<DashboardScreen>
             icon: Icons.settings_outlined,
             isDark: isDark,
             onTap: () {
-              // ✅ FIX: Add SnackBar feedback
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: const Text('Settings button pressed!'),
@@ -315,7 +314,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                 ),
               );
               HapticFeedback.lightImpact();
-              // TODO: Navigate to settings
             },
           ),
         ],
@@ -565,7 +563,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     }
   }
 
-  /// Show detailed error dialog with the exact exception message
   void _showErrorDialog(BuildContext context, String message, String? code) {
     showDialog(
       context: context,
@@ -671,7 +668,6 @@ class _DashboardScreenState extends State<DashboardScreen>
           TextButton(
             onPressed: () {
               Navigator.of(context).pop();
-              // Reset VPN state
               context.read<VpnCubit>().reset();
             },
             child: Text(
@@ -685,7 +681,6 @@ class _DashboardScreenState extends State<DashboardScreen>
           TextButton(
             onPressed: () {
               Navigator.of(context).pop();
-              // Open advanced config to let user fix settings
               _showAdvancedConfig();
             },
             child: Text(
@@ -701,11 +696,12 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-  /// Get troubleshooting tips based on error message
   String _getTroubleshootingTips(String errorMessage) {
     final lowerMessage = errorMessage.toLowerCase();
     
-    if (lowerMessage.contains('connection_refused')) {
+    if (lowerMessage.contains('server') && lowerMessage.contains('null')) {
+      return '• Server configuration is missing\n• Open Advanced Config and save your settings\n• Make sure IP and Port are entered correctly';
+    } else if (lowerMessage.contains('connection_refused')) {
       return '• Check if server is running\n• Verify the port number is correct\n• Check firewall settings on server';
     } else if (lowerMessage.contains('timeout')) {
       return '• Server may be offline\n• Check network connectivity\n• Verify IP address is correct\n• Check firewall settings';
