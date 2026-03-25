@@ -139,16 +139,13 @@ class _DashboardScreenState extends State<DashboardScreen>
         body: BlocConsumer<VpnCubit, VpnState>(
           listener: (context, state) {
             if (state is VpnError) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Error: ${state.message}'),
-                  backgroundColor: AppTheme.error,
-                  behavior: SnackBarBehavior.floating,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                ),
-              );
+              // Show AlertDialog with detailed error
+              _showErrorDialog(context, state.message, state.code);
+            } else if (state is VpnReady && 
+                       state.status.state == VpnConnectionState.error &&
+                       state.status.errorMessage != null) {
+              // Show AlertDialog with error from status
+              _showErrorDialog(context, state.status.errorMessage!, 'CONNECTION_ERROR');
             }
           },
           builder: (context, vpnState) {
@@ -537,6 +534,163 @@ class _DashboardScreenState extends State<DashboardScreen>
       case VpnConnectionState.disconnected:
       default:
         return AppTheme.statusDisconnected;
+    }
+  }
+
+  /// Show detailed error dialog with the exact exception message
+  void _showErrorDialog(BuildContext context, String message, String? code) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Theme.of(context).brightness == Brightness.dark
+            ? const Color(0xFF1E1E1E)
+            : Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: Row(
+          children: [
+            Icon(
+              Icons.error_outline,
+              color: AppTheme.error,
+              size: 28,
+            ),
+            const SizedBox(width: 12),
+            const Text(
+              'Connection Error',
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (code != null) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppTheme.error.withAlpha(25),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    'Error Code: $code',
+                    style: TextStyle(
+                      color: AppTheme.error,
+                      fontWeight: FontWeight.w500,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+              Text(
+                'Detailed Error:',
+                style: TextStyle(
+                  fontWeight: FontWeight.w500,
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? const Color(0xFF9AA0A6)
+                      : const Color(0xFF5F6368),
+                  fontSize: 12,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? const Color(0xFF2D2D2D)
+                      : const Color(0xFFF5F5F5),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: SelectableText(
+                  message,
+                  style: const TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Tips:',
+                style: TextStyle(
+                  fontWeight: FontWeight.w500,
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? const Color(0xFF9AA0A6)
+                      : const Color(0xFF5F6368),
+                  fontSize: 12,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _getTroubleshootingTips(message),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? const Color(0xFFE8EAED)
+                      : const Color(0xFF1F1F1F),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              // Reset VPN state
+              context.read<VpnCubit>().reset();
+            },
+            child: Text(
+              'Dismiss',
+              style: TextStyle(
+                color: AppTheme.primaryColor,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              // Open advanced config to let user fix settings
+              _showAdvancedConfig();
+            },
+            child: Text(
+              'Edit Config',
+              style: TextStyle(
+                color: AppTheme.primaryColor,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Get troubleshooting tips based on error message
+  String _getTroubleshootingTips(String errorMessage) {
+    final lowerMessage = errorMessage.toLowerCase();
+    
+    if (lowerMessage.contains('connection_refused')) {
+      return '• Check if server is running\n• Verify the port number is correct\n• Check firewall settings on server';
+    } else if (lowerMessage.contains('timeout')) {
+      return '• Server may be offline\n• Check network connectivity\n• Verify IP address is correct\n• Check firewall settings';
+    } else if (lowerMessage.contains('dns') || lowerMessage.contains('unresolved')) {
+      return '• Check if the server IP/hostname is correct\n• Try using IP address instead of hostname\n• Check your DNS settings';
+    } else if (lowerMessage.contains('no_route')) {
+      return '• Network is unreachable\n• Check WiFi/mobile data connection\n• Server IP may be invalid';
+    } else if (lowerMessage.contains('permission')) {
+      return '• Grant VPN permission when prompted\n• Reinstall the app if permission issues persist';
+    } else if (lowerMessage.contains('protect_failed')) {
+      return '• VPN socket protection failed\n• Try restarting the app\n• Check Android VPN settings';
+    } else {
+      return '• Check server IP and port\n• Verify network connectivity\n• Try a different server';
     }
   }
 }

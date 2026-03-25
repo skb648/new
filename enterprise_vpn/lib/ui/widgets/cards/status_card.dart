@@ -89,9 +89,63 @@ class StatusCard extends StatelessWidget {
 
           const SizedBox(height: 16),
 
+          // Error Message Display
+          if (status.state == VpnConnectionState.error && status.errorMessage != null)
+            _buildErrorMessage(context, isDark),
+
           // Server Info
           if (status.serverName != null || status.serverIp != null)
             _buildServerInfo(context, isDark),
+        ],
+      ),
+    );
+  }
+
+  /// Build error message display with detailed error info
+  Widget _buildErrorMessage(BuildContext context, bool isDark) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: AppTheme.error.withAlpha(25),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: AppTheme.error.withAlpha(50),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.error_outline,
+                color: AppTheme.error,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Connection Failed',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: AppTheme.error,
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            status.errorMessage ?? 'Unknown error',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: isDark
+                      ? const Color(0xFFE8EAED)
+                      : const Color(0xFF1F1F1F),
+                  fontFamily: 'monospace',
+                  fontSize: 11,
+                ),
+          ),
         ],
       ),
     );

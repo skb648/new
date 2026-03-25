@@ -120,6 +120,12 @@ class VpnCubit extends Cubit<VpnState> {
 
     switch (event.type) {
       case VpnEventType.error:
+        // Extract error code from event data if available
+        String? errorCode;
+        if (event.data != null && event.data!.containsKey('errorCode')) {
+          errorCode = event.data!['errorCode'] as String?;
+        }
+        
         final currentState = state;
         if (currentState is VpnReady) {
           emit(currentState.copyWith(
@@ -127,6 +133,12 @@ class VpnCubit extends Cubit<VpnState> {
               state: VpnConnectionState.error,
               errorMessage: event.message,
             ),
+          ));
+        } else {
+          // If not in VpnReady, emit VpnError with code
+          emit(VpnError(
+            message: event.message,
+            code: errorCode,
           ));
         }
         break;

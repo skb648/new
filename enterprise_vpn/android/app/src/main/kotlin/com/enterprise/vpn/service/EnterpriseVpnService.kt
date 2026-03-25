@@ -205,7 +205,9 @@ class EnterpriseVpnService : VpnService() {
             
             // CRITICAL: Protect the socket BEFORE connecting
             if (!protect(socket)) {
-                Log.e(TAG, "Failed to protect TCP test socket")
+                val errorMsg = "PROTECT_FAILED: VPN protect() returned false for TCP test socket"
+                Log.e(TAG, errorMsg)
+                sendDetailedError(errorMsg, "PROTECT_FAILED")
                 return false
             }
             Log.d(TAG, "TCP test socket protected successfully")
@@ -222,19 +224,68 @@ class EnterpriseVpnService : VpnService() {
             return true
 
         } catch (e: UnknownHostException) {
-            Log.e(TAG, "TCP test failed - Unknown host: $serverIp", e)
+            val errorMsg = "DNS_ERROR [UnknownHostException]: Cannot resolve host '$serverIp' - ${e.message}"
+            Log.e(TAG, errorMsg, e)
+            sendDetailedError(errorMsg, "DNS_ERROR")
             return false
         } catch (e: ConnectException) {
-            Log.e(TAG, "TCP test failed - Connection refused: $serverIp:$port", e)
+            val errorMsg = "CONNECTION_REFUSED [ConnectException]: Server at $serverIp:$port refused connection - ${e.message}. Is the server running and listening on this port?"
+            Log.e(TAG, errorMsg, e)
+            sendDetailedError(errorMsg, "CONNECTION_REFUSED")
             return false
         } catch (e: SocketTimeoutException) {
-            Log.e(TAG, "TCP test failed - Connection timeout: $serverIp:$port", e)
+            val errorMsg = "CONNECTION_TIMEOUT [SocketTimeoutException]: Connection to $serverIp:$port timed out after 10 seconds - ${e.message}. Server may be offline or firewall blocking."
+            Log.e(TAG, errorMsg, e)
+            sendDetailedError(errorMsg, "CONNECTION_TIMEOUT")
+            return false
+        } catch (e: java.net.NoRouteToHostException) {
+            val errorMsg = "NO_ROUTE [NoRouteToHostException]: No route to host $serverIp - Network unreachable: ${e.message}"
+            Log.e(TAG, errorMsg, e)
+            sendDetailedError(errorMsg, "NO_ROUTE")
+            return false
+        } catch (e: java.nio.channels.UnresolvedAddressException) {
+            val errorMsg = "UNRESOLVED_ADDRESS [UnresolvedAddressException]: Cannot resolve address '$serverIp' - ${e.message}"
+            Log.e(TAG, errorMsg, e)
+            sendDetailedError(errorMsg, "UNRESOLVED_ADDRESS")
+            return false
+        } catch (e: SecurityException) {
+            val errorMsg = "PERMISSION_DENIED [SecurityException]: Network permission denied - ${e.message}"
+            Log.e(TAG, errorMsg, e)
+            sendDetailedError(errorMsg, "PERMISSION_DENIED")
+            return false
+        } catch (e: IOException) {
+            val errorMsg = "IO_ERROR [IOException]: Network error connecting to $serverIp:$port - ${e.message}"
+            Log.e(TAG, errorMsg, e)
+            sendDetailedError(errorMsg, "IO_ERROR")
             return false
         } catch (e: Exception) {
-            Log.e(TAG, "TCP test failed - ${e.javaClass.simpleName}: ${e.message}", e)
+            val errorMsg = "UNKNOWN_ERROR [${e.javaClass.simpleName}]: ${e.message}"
+            Log.e(TAG, errorMsg, e)
+            sendDetailedError(errorMsg, "UNKNOWN_ERROR")
             return false
         } finally {
             try { socket?.close() } catch (e: Exception) { }
+        }
+    }
+
+    /**
+     * Send detailed error to Flutter with full exception info
+     */
+    private fun sendDetailedError(message: String, code: String) {
+        try {
+            val event = VpnEvent(
+                type = VpnEventType.ERROR,
+                message = "[$code] $message",
+                data = mapOf(
+                    "errorCode" to code,
+                    "fullMessage" to message,
+                    "timestamp" to System.currentTimeMillis()
+                )
+            )
+            _eventFlow.value = event
+            Log.e(TAG, "🔥 DETAILED ERROR SENT TO FLUTTER: [$code] $message")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to send error to Flutter: ${e.message}")
         }
     }
 
@@ -244,7 +295,9 @@ class EnterpriseVpnService : VpnService() {
             channel = DatagramChannel.open()
             
             if (!protect(channel.socket())) {
-                Log.e(TAG, "Failed to protect UDP test socket")
+                val errorMsg = "PROTECT_FAILED: VPN protect() returned false for UDP test socket"
+                Log.e(TAG, errorMsg)
+                sendDetailedError(errorMsg, "PROTECT_FAILED")
                 return false
             }
             Log.d(TAG, "UDP test socket protected successfully")
@@ -258,8 +311,35 @@ class EnterpriseVpnService : VpnService() {
             Log.i(TAG, "UDP connection test successful: $serverIp:$port")
             return true
 
+        } catch (e: UnknownHostException) {
+            val errorMsg = "DNS_ERROR [UnknownHostException]: Cannot resolve host '$serverIp' - ${e.message}"
+            Log.e(TAG, errorMsg, e)
+            sendDetailedError(errorMsg, "DNS_ERROR")
+            return false
+        } catch (e: java.net.NoRouteToHostException) {
+            val errorMsg = "NO_ROUTE [NoRouteToHostException]: No route to host $serverIp - ${e.message}"
+            Log.e(TAG, errorMsg, e)
+            sendDetailedError(errorMsg, "NO_ROUTE")
+            return false
+        } catch (e: java.nio.channels.UnresolvedAddressException) {
+            val errorMsg = "UNRESOLVED_ADDRESS [UnresolvedAddressException]: Cannot resolve address '$serverIp' - ${e.message}"
+            Log.e(TAG, errorMsg, e)
+            sendDetailedError(errorMsg, "UNRESOLVED_ADDRESS")
+            return false
+        } catch (e: SecurityException) {
+            val errorMsg = "PERMISSION_DENIED [SecurityException]: Network permission denied - ${e.message}"
+            Log.e(TAG, errorMsg, e)
+            sendDetailedError(errorMsg, "PERMISSION_DENIED")
+            return false
+        } catch (e: IOException) {
+            val errorMsg = "IO_ERROR [IOException]: Network error connecting to $serverIp:$port - ${e.message}"
+            Log.e(TAG, errorMsg, e)
+            sendDetailedError(errorMsg, "IO_ERROR")
+            return false
         } catch (e: Exception) {
-            Log.e(TAG, "UDP test failed - ${e.javaClass.simpleName}: ${e.message}", e)
+            val errorMsg = "UNKNOWN_ERROR [${e.javaClass.simpleName}]: ${e.message}"
+            Log.e(TAG, errorMsg, e)
+            sendDetailedError(errorMsg, "UNKNOWN_ERROR")
             return false
         } finally {
             try { channel?.close() } catch (e: Exception) { }
