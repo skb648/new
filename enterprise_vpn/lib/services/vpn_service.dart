@@ -366,19 +366,21 @@ class VpnService {
         configMap,
       );
 
-      debugPrint('Received result from Kotlin: $result');
+      debugPrint('Received result from Kotlin: $result (type: ${result.runtimeType})');
       
       // Handle different result types
       bool success = false;
       String? error;
       String? errorCode;
       
-      if (result is bool) {
-        success = result;
-      } else if (result is Map) {
+      if (result is Map) {
+        // Kotlin returns a Map with success/error info
         success = result['success'] as bool? ?? false;
         error = result['error'] as String?;
         errorCode = result['errorCode'] as String?;
+      } else if (result == true) {
+        // Handle simple boolean true
+        success = true;
       }
 
       if (success) {
