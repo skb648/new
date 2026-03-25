@@ -62,16 +62,48 @@ object VpnServiceManager : MethodChannel.MethodCallHandler {
     @Suppress("UNCHECKED_CAST")
     private fun handleConnect(call: MethodCall, result: MethodChannel.Result) {
         try {
+            Log.d(TAG, "======== handleConnect called ========")
+            
             val configMap = call.arguments as? Map<String, Any?>
             if (configMap == null) {
-                result.error("CONFIG_INVALID", "Invalid configuration format", null)
+                Log.e(TAG, "CONFIG_INVALID: configMap is null, arguments=${call.arguments}")
+                result.error("CONFIG_INVALID", "Invalid configuration format - configMap is null", null)
+                return
+            }
+            
+            Log.d(TAG, "Received configMap keys: ${configMap.keys}")
+            
+            val serverMap = configMap["server"] as? Map<String, Any?>
+            if (serverMap != null) {
+                Log.d(TAG, "Server map: id=${serverMap["id"]}, name=${serverMap["name"]}, serverIp=${serverMap["serverIp"]}, port=${serverMap["port"]}")
+            } else {
+                Log.e(TAG, "Server map is null!")
+                result.error("CONFIG_INVALID", "Invalid configuration: server map is missing", null)
                 return
             }
             
             val config = VpnConfig.fromMap(configMap)
             
+            Log.d(TAG, "Parsed config: server=${config.server}, serverIp=${config.server?.serverIp}, port=${config.server?.port}")
+            Log.d(TAG, "Config isValid: ${config.isValid()}")
+            
             if (!config.isValid()) {
-                result.error("CONFIG_INVALID", "Invalid VPN configuration", null)
+                val errorMsg = buildString {
+                    append("Invalid VPN configuration: ")
+                    if (config.server == null) {
+                        append("server is null")
+                    } else {
+                        if (config.server!!.serverIp.isEmpty()) {
+                            append("server address is missing")
+                        }
+                        if (config.server!!.port <= 0) {
+                            if (isNotEmpty()) append(", ")
+                            append("port is invalid (${config.server!!.port})")
+                        }
+                    }
+                }
+                Log.e(TAG, "CONFIG_INVALID: $errorMsg")
+                result.error("CONFIG_INVALID", errorMsg, null)
                 return
             }
             
@@ -92,7 +124,12 @@ object VpnServiceManager : MethodChannel.MethodCallHandler {
                 ctx.startService(intent)
             }
             
-            result.success(true)
+            // Return success result as map for Flutter to parse
+            result.success(mapOf(
+                "success" to true,
+                "error" to null,
+                "errorCode" to null
+            ))
             Log.i(TAG, "VPN service started with config")
             
         } catch (e: Exception) {

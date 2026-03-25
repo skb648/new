@@ -301,10 +301,49 @@ class VpnService {
   }
 
   /// Connect to VPN with the given configuration
-  Future<bool> connect(VpnConfig config) async {
-    if (!config.isValid) {
-      _handleError('Invalid VPN configuration');
-      return false;
+  /// Returns ConnectionResult with success status and error details
+  Future<ConnectionResult> connect(VpnConfig config) async {
+    // Debug: Log the incoming config
+    debugPrint('========================================');
+    debugPrint('VpnService.connect() called');
+    debugPrint('config.isValid: ${config.isValid}');
+    debugPrint('config.server: ${config.server}');
+    debugPrint('config.server?.serverIp: ${config.server?.serverIp}');
+    debugPrint('config.server?.port: ${config.server?.port}');
+    debugPrint('========================================');
+    
+    // Early validation with clear error message
+    if (config.server == null) {
+      final errorMsg = 'Invalid configuration: server is null';
+      debugPrint('ERROR: $errorMsg');
+      _handleError(errorMsg);
+      return ConnectionResult(
+        success: false,
+        error: errorMsg,
+        errorCode: 'SERVER_NULL',
+      );
+    }
+    
+    if (config.server!.serverIp.isEmpty) {
+      final errorMsg = 'Invalid configuration: server address is missing';
+      debugPrint('ERROR: $errorMsg');
+      _handleError(errorMsg);
+      return ConnectionResult(
+        success: false,
+        error: errorMsg,
+        errorCode: 'SERVER_IP_EMPTY',
+      );
+    }
+    
+    if (config.server!.port <= 0) {
+      final errorMsg = 'Invalid configuration: server port is invalid';
+      debugPrint('ERROR: $errorMsg');
+      _handleError(errorMsg);
+      return ConnectionResult(
+        success: false,
+        error: errorMsg,
+        errorCode: 'PORT_INVALID',
+      );
     }
 
     try {
@@ -318,12 +357,31 @@ class VpnService {
       );
       _statusStreamController.add(_status);
 
-      final result = await _methodChannel.invokeMethod<bool>(
+      // Build config map with explicit values (avoid null server issues)
+      final configMap = _buildConfigMap(config);
+      debugPrint('Sending configMap to Kotlin: $configMap');
+      
+      final result = await _methodChannel.invokeMethod<Map<dynamic, dynamic>>(
         AppConstants.methodConnect,
-        config.toMap(),
+        configMap,
       );
 
-      if (result == true) {
+      debugPrint('Received result from Kotlin: $result');
+      
+      // Handle different result types
+      bool success = false;
+      String? error;
+      String? errorCode;
+      
+      if (result is bool) {
+        success = result;
+      } else if (result is Map) {
+        success = result['success'] as bool? ?? false;
+        error = result['error'] as String?;
+        errorCode = result['errorCode'] as String?;
+      }
+
+      if (success) {
         // Save last used server
         await _preferences.setString(
           AppConstants.keyLastServer,
@@ -331,10 +389,20 @@ class VpnService {
         );
       }
 
-      return result ?? false;
+      return ConnectionResult(
+        success: success,
+        error: error,
+        errorCode: errorCode,
+      );
     } on PlatformException catch (e) {
-      _handleError('Failed to connect: ${e.message}');
-      return false;
+      final errorMsg = 'Failed to connect: ${e.message}';
+      debugPrint('PlatformException: $errorMsg');
+      _handleError(errorMsg);
+      return ConnectionResult(
+        success: false,
+        error: errorMsg,
+        errorCode: e.code,
+      );
     }
   }
 
@@ -421,6 +489,58 @@ class VpnService {
   }
 
   // ============================================
+  // HELPER METHODS
+  // ============================================
+
+  /// Build config map with explicit values (avoid null server issues)
+  /// This ensures all required fields have proper defaults
+  Map<String, dynamic> _buildConfigMap(VpnConfig config) {
+    return {
+      'server': {
+        'id': config.server?.id ?? '',
+        'name': config.server?.name ?? 'Custom Server',
+        'serverIp': config.server?.serverIp ?? '',
+        'port': config.server?.port ?? 443,
+        'protocol': config.server?.protocol ?? 'TCP',
+        'country': config.server?.country ?? '',
+        'countryCode': config.server?.countryCode ?? '',
+        'city': config.server?.city ?? '',
+        'load': config.server?.load ?? 0,
+        'isPremium': config.server?.isPremium ?? false,
+        'isFavorite': config.server?.isFavorite ?? false,
+        'username': config.server?.username ?? '',
+        'password': config.server?.password ?? '',
+      },
+      'httpHeaders': config.httpHeaders
+          .where((h) => h.enabled)
+          .map((h) => {
+                'name': h.name,
+                'value': h.value,
+                'enabled': h.enabled,
+              })
+          .toList(),
+      'sniConfig': config.sniConfig != null
+          ? {
+              'serverName': config.sniConfig!.serverName,
+              'enabled': config.sniConfig!.enabled,
+              'allowOverride': config.sniConfig!.allowOverride,
+            }
+          : null,
+      'autoConnect': config.autoConnect,
+      'killSwitch': config.killSwitch,
+      'dnsLeakProtection': config.dnsLeakProtection,
+      'ipv6Enabled': config.ipv6Enabled,
+      'splitTunnelEnabled': config.splitTunnelEnabled,
+      'excludedApps': config.excludedApps,
+      'customDns': config.customDns,
+      'mtu': config.mtu,
+      'customPayload': '',
+      'connectionTimeout': 30000,
+      'readTimeout': 60000,
+    };
+  }
+
+  // ============================================
   // CLEANUP
   // ============================================
 
@@ -458,4 +578,23 @@ class VpnEvent {
   final String message;
   final DateTime timestamp;
   final Map<String, dynamic>? data;
+}
+
+/// Connection Result Model
+/// Used to return detailed connection results from native code
+class ConnectionResult {
+  const ConnectionResult({
+    required this.success,
+    this.error,
+    this.errorCode,
+  });
+
+  final bool success;
+  final String? error;
+  final String? errorCode;
+
+  bool get hasError => error != null;
+  
+  @override
+  String toString() => 'ConnectionResult(success: $success, error: $error, errorCode: $errorCode)';
 }

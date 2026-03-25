@@ -132,16 +132,49 @@ class ConfigCubit extends Cubit<ConfigState> {
       currentLoadedState = ConfigLoaded(config: VpnConfig.empty());
     }
 
+    // Debug logging - BEFORE save
+    debugPrint('========================================');
+    debugPrint('ConfigCubit.saveConfiguration() - BEFORE SAVE');
+    debugPrint('config.isValid: ${config.isValid}');
+    debugPrint('config.server: ${config.server}');
+    debugPrint('config.server?.serverIp: ${config.server?.serverIp}');
+    debugPrint('config.server?.port: ${config.server?.port}');
+    debugPrint('currentState type: ${currentState.runtimeType}');
+    debugPrint('========================================');
+
     try {
+      final configJson = config.toJson();
+      debugPrint('Saving config JSON: $configJson');
+      
       await _secureStorage.write(
         key: AppConstants.keyVpnConfig,
-        value: config.toJson(),
+        value: configJson,
       );
+      
+      // Verify the save worked
+      final savedJson = await _secureStorage.read(key: AppConstants.keyVpnConfig);
+      debugPrint('Verified saved JSON: $savedJson');
 
-      emit(currentLoadedState.copyWith(config: config));
+      final newState = currentLoadedState.copyWith(config: config);
+      debugPrint('Emitting new state with config: serverIp=${newState.config.server?.serverIp}, port=${newState.config.server?.port}');
+      emit(newState);
+      
+      // Debug logging - AFTER emit
+      debugPrint('========================================');
+      debugPrint('ConfigCubit.saveConfiguration() - AFTER EMIT');
+      debugPrint('New state emitted successfully');
+      debugPrint('state is ConfigLoaded: ${state is ConfigLoaded}');
+      if (state is ConfigLoaded) {
+        final loadedState = state as ConfigLoaded;
+        debugPrint('state.config.server?.serverIp: ${loadedState.config.server?.serverIp}');
+        debugPrint('state.config.server?.port: ${loadedState.config.server?.port}');
+      }
+      debugPrint('========================================');
+      
     } catch (e) {
       debugPrint('Failed to save configuration: $e');
-      // Keep state - don't emit error
+      // Still try to emit the state even if storage failed
+      emit(currentLoadedState.copyWith(config: config));
     }
   }
 

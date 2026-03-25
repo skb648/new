@@ -110,10 +110,14 @@ class EnterpriseVpnService : VpnService() {
         when (intent?.action) {
             ACTION_CONNECT -> {
                 val configJson = intent.getStringExtra("config")
+                Log.d(TAG, "Received config JSON: $configJson")
+                
                 if (configJson != null) {
                     val config = VpnConfig.fromJson(configJson)
+                    Log.d(TAG, "Parsed config from JSON: server=${config.server}, serverIp=${config.server?.serverIp}, port=${config.server?.port}")
                     connect(config)
                 } else {
+                    Log.e(TAG, "No configuration provided in intent")
                     sendError("No configuration provided")
                 }
             }
@@ -126,8 +130,16 @@ class EnterpriseVpnService : VpnService() {
     }
 
     fun connect(config: VpnConfig) {
+        Log.d(TAG, "======== EnterpriseVpnService.connect() ========")
+        Log.d(TAG, "config.server: ${config.server}")
+        Log.d(TAG, "config.server?.serverIp: ${config.server?.serverIp}")
+        Log.d(TAG, "config.server?.port: ${config.server?.port}")
+        Log.d(TAG, "config.isValid(): ${config.isValid()}")
+        
         if (!config.isValid()) {
-            sendError("Invalid configuration: server address or port missing")
+            val errorMsg = "Invalid configuration: server=${config.server}, serverIp=${config.server?.serverIp}, port=${config.server?.port}"
+            Log.e(TAG, errorMsg)
+            sendError(errorMsg)
             return
         }
 

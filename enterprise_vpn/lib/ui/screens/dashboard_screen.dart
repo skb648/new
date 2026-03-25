@@ -89,6 +89,11 @@ class _DashboardScreenState extends State<DashboardScreen>
     final vpnCubit = context.read<VpnCubit>();
     final configCubit = context.read<ConfigCubit>();
     
+    // Debug logging for config state
+    debugPrint('========================================');
+    debugPrint('DashboardScreen._toggleVpn() - CHECKING CONFIG STATE');
+    debugPrint('configCubit.state type: ${configCubit.state.runtimeType}');
+    
     // Get current VPN status
     final currentState = vpnCubit.state;
     VpnStatus currentStatus;
@@ -98,12 +103,28 @@ class _DashboardScreenState extends State<DashboardScreen>
       currentStatus = VpnStatus.initial();
     }
 
-    // Get config
+    // Get config - read fresh from the cubit
     VpnConfig config;
-    if (configCubit.state is ConfigLoaded) {
-      config = (configCubit.state as ConfigLoaded).config;
+    final configState = configCubit.state;
+    
+    debugPrint('configState is ConfigLoaded: ${configState is ConfigLoaded}');
+    
+    if (configState is ConfigLoaded) {
+      config = configState.config;
+      // Debug logging
+      debugPrint('========================================');
+      debugPrint('DashboardScreen._toggleVpn() - Config Loaded');
+      debugPrint('config.isValid: ${config.isValid}');
+      debugPrint('config.server: ${config.server}');
+      debugPrint('config.server?.serverIp: ${config.server?.serverIp}');
+      debugPrint('config.server?.port: ${config.server?.port}');
+      debugPrint('========================================');
     } else {
       config = VpnConfig.empty();
+      debugPrint('========================================');
+      debugPrint('DashboardScreen._toggleVpn() - Config NOT Loaded, using empty');
+      debugPrint('configCubit.state: ${configCubit.state}');
+      debugPrint('========================================');
     }
 
     // Toggle based on current state
@@ -114,9 +135,16 @@ class _DashboardScreenState extends State<DashboardScreen>
                currentStatus.state == VpnConnectionState.noNetwork) {
       // Check if config is valid
       if (config.isValid && config.server != null) {
+        debugPrint('Calling vpnCubit.connect() with valid config');
         vpnCubit.connect(config);
       } else {
         // Show config sheet if no valid config
+        debugPrint('Config invalid or server is null:');
+        debugPrint('  config.isValid: ${config.isValid}');
+        debugPrint('  config.server: ${config.server}');
+        debugPrint('  config.server?.serverIp: ${config.server?.serverIp}');
+        debugPrint('  config.server?.port: ${config.server?.port}');
+        debugPrint('Showing config sheet...');
         _showAdvancedConfig();
       }
     } else if (currentStatus.state == VpnConnectionState.connecting) {

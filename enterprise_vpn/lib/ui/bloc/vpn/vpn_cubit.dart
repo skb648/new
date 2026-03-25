@@ -265,23 +265,45 @@ class VpnCubit extends Cubit<VpnState> {
     ));
 
     try {
-      final success = await _vpnService.connect(config);
-      if (!success) {
+      debugPrint('========================================');
+      debugPrint('VpnCubit.connect() - Calling _vpnService.connect()');
+      debugPrint('config.isValid: ${config.isValid}');
+      debugPrint('config.server: ${config.server}');
+      debugPrint('config.server?.serverIp: ${config.server?.serverIp}');
+      debugPrint('config.server?.port: ${config.server?.port}');
+      debugPrint('========================================');
+      
+      final result = await _vpnService.connect(config);
+      
+      debugPrint('VpnCubit.connect() - Result: success=${result.success}, error=${result.error}');
+      
+      if (!result.success) {
+        final errorMessage = result.error ?? 'Failed to connect to VPN server';
+        debugPrint('VpnCubit.connect() - Emitting error: $errorMessage');
         emit(VpnReady(
           status: currentState.status.copyWith(
             state: VpnConnectionState.error,
-            errorMessage: 'Failed to connect to VPN server',
+            errorMessage: errorMessage,
           ),
           config: config,
         ));
+        // Also emit VpnError for BlocListener to catch
+        emit(VpnError(
+          message: errorMessage,
+          code: result.errorCode,
+        ));
       }
     } catch (e) {
+      debugPrint('VpnCubit.connect() - Exception: $e');
       emit(VpnReady(
         status: currentState.status.copyWith(
           state: VpnConnectionState.error,
           errorMessage: 'Connection error: $e',
         ),
         config: config,
+      ));
+      emit(VpnError(
+        message: 'Connection error: $e',
       ));
     }
   }

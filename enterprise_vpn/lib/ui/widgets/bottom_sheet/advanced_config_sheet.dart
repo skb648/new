@@ -125,6 +125,16 @@ class _AdvancedConfigSheetState extends State<AdvancedConfigSheet>
       password: password,
     );
 
+    // Debug logging
+    debugPrint('========================================');
+    debugPrint('AdvancedConfigSheet._saveConfiguration()');
+    debugPrint('serverConfig.id: ${serverConfig.id}');
+    debugPrint('serverConfig.serverIp: ${serverConfig.serverIp}');
+    debugPrint('serverConfig.port: ${serverConfig.port}');
+    debugPrint('serverConfig.protocol: ${serverConfig.protocol}');
+    debugPrint('serverConfig.isValid: ${serverConfig.serverIp.isNotEmpty && serverConfig.port > 0}');
+    debugPrint('========================================');
+
     // Create SNI config
     SniConfig? sniConfig;
     if (_sniController.text.isNotEmpty) {
@@ -154,6 +164,13 @@ class _AdvancedConfigSheetState extends State<AdvancedConfigSheet>
       sniConfig: sniConfig,
       httpHeaders: headers,
     );
+
+    // Debug logging for final config
+    debugPrint('========================================');
+    debugPrint('Final VpnConfig created:');
+    debugPrint('config.isValid: ${config.isValid}');
+    debugPrint('config.server: ${config.server}');
+    debugPrint('========================================');
 
     // Save configuration
     context.read<ConfigCubit>().saveConfiguration(config);

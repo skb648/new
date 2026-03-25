@@ -66,7 +66,7 @@ data class VpnServerConfig(
         fun fromJson(json: String): VpnServerConfig {
             return try {
                 val obj = JSONObject(json)
-                VpnServerConfig(
+                val config = VpnServerConfig(
                     id = obj.optString("id", ""),
                     name = obj.optString("name", ""),
                     serverIp = obj.optString("serverIp", ""),
@@ -75,7 +75,10 @@ data class VpnServerConfig(
                     username = obj.optString("username", ""),
                     password = obj.optString("password", "")
                 )
+                android.util.Log.d("VpnServerConfig", "fromJson: serverIp=${config.serverIp}, port=${config.port}")
+                config
             } catch (e: Exception) {
+                android.util.Log.e("VpnServerConfig", "fromJson failed: ${e.message}")
                 VpnServerConfig()
             }
         }
@@ -271,6 +274,8 @@ data class VpnConfig(
                 val serverObj = obj.optJSONObject("server")
                 val server = if (serverObj != null) VpnServerConfig.fromJson(serverObj.toString()) else null
                 
+                android.util.Log.d("VpnConfig", "fromJson: serverObj=$serverObj, server=$server")
+                
                 val headersArray = obj.optJSONArray("httpHeaders")
                 val headers = if (headersArray != null) {
                     (0 until headersArray.length()).map { i ->
@@ -292,7 +297,7 @@ data class VpnConfig(
                     )
                 } else null
                 
-                VpnConfig(
+                val config = VpnConfig(
                     server = server,
                     httpHeaders = headers,
                     sniConfig = sniConfig,
@@ -303,7 +308,11 @@ data class VpnConfig(
                     splitTunnelEnabled = obj.optBoolean("splitTunnelEnabled", false),
                     mtu = obj.optInt("mtu", 1500)
                 )
+                
+                android.util.Log.d("VpnConfig", "fromJson result: serverIp=${config.server?.serverIp}, port=${config.server?.port}, isValid=${config.isValid()}")
+                config
             } catch (e: Exception) {
+                android.util.Log.e("VpnConfig", "fromJson failed: ${e.message}")
                 VpnConfig()
             }
         }
