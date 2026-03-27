@@ -66,26 +66,27 @@ object VpnServiceManager : MethodChannel.MethodCallHandler {
             
             val configMap = call.arguments as? Map<String, Any?>
             if (configMap == null) {
-                Log.e(TAG, "CONFIG_INVALID: configMap is null, arguments=${call.arguments}")
+                Log.e(TAG, "🔥 CONFIG_INVALID: configMap is null, arguments=${call.arguments}")
                 result.error("CONFIG_INVALID", "Invalid configuration format - configMap is null", null)
                 return
             }
             
-            Log.d(TAG, "Received configMap keys: ${configMap.keys}")
+            Log.d(TAG, "🔥 Received configMap keys: ${configMap.keys}")
+            Log.d(TAG, "🔥 Full configMap: $configMap")
             
             val serverMap = configMap["server"] as? Map<String, Any?>
             if (serverMap != null) {
-                Log.d(TAG, "Server map: id=${serverMap["id"]}, name=${serverMap["name"]}, serverIp=${serverMap["serverIp"]}, port=${serverMap["port"]}")
+                Log.d(TAG, "🔥 Server map: id=${serverMap["id"]}, name=${serverMap["name"]}, serverIp=${serverMap["serverIp"]}, port=${serverMap["port"]}")
             } else {
-                Log.e(TAG, "Server map is null!")
+                Log.e(TAG, "🔥 Server map is null!")
                 result.error("CONFIG_INVALID", "Invalid configuration: server map is missing", null)
                 return
             }
             
             val config = VpnConfig.fromMap(configMap)
             
-            Log.d(TAG, "Parsed config: server=${config.server}, serverIp=${config.server?.serverIp}, port=${config.server?.port}")
-            Log.d(TAG, "Config isValid: ${config.isValid()}")
+            Log.d(TAG, "🔥 Parsed config: server=${config.server}, serverIp=${config.server?.serverIp}, port=${config.server?.port}")
+            Log.d(TAG, "🔥 Config isValid: ${config.isValid()}")
             
             if (!config.isValid()) {
                 val errorMsg = buildString {
@@ -102,7 +103,7 @@ object VpnServiceManager : MethodChannel.MethodCallHandler {
                         }
                     }
                 }
-                Log.e(TAG, "CONFIG_INVALID: $errorMsg")
+                Log.e(TAG, "🔥 CONFIG_INVALID: $errorMsg")
                 result.error("CONFIG_INVALID", errorMsg, null)
                 return
             }
@@ -113,9 +114,13 @@ object VpnServiceManager : MethodChannel.MethodCallHandler {
                 return
             }
             
+            // ✅ CRITICAL: Build JSON and log it
+            val configJson = config.toJson()
+            Log.d(TAG, "🔥 SENDING TO VPN SERVICE - configJson: $configJson")
+            
             val intent = Intent(ctx, EnterpriseVpnService::class.java).apply {
                 action = EnterpriseVpnService.ACTION_CONNECT
-                putExtra("config", config.toJson())
+                putExtra("config", configJson)
             }
             
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -130,10 +135,10 @@ object VpnServiceManager : MethodChannel.MethodCallHandler {
                 "error" to null,
                 "errorCode" to null
             ))
-            Log.i(TAG, "VPN service started with config")
+            Log.i(TAG, "🔥 VPN service started with valid config")
             
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to start VPN", e)
+            Log.e(TAG, "🔥 Failed to start VPN", e)
             result.error("CONNECTION_ERROR", "Failed to start VPN: ${e.message}", null)
         }
     }

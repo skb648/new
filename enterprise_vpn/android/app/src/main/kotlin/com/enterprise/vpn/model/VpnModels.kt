@@ -272,9 +272,19 @@ data class VpnConfig(
             return try {
                 val obj = JSONObject(json)
                 val serverObj = obj.optJSONObject("server")
-                val server = if (serverObj != null) VpnServerConfig.fromJson(serverObj.toString()) else null
                 
-                android.util.Log.d("VpnConfig", "fromJson: serverObj=$serverObj, server=$server")
+                android.util.Log.d("VpnConfig", "🔥 fromJson() called")
+                android.util.Log.d("VpnConfig", "🔥 Raw JSON: $json")
+                android.util.Log.d("VpnConfig", "🔥 serverObj: $serverObj")
+                
+                val server = if (serverObj != null) {
+                    val parsed = VpnServerConfig.fromJson(serverObj.toString())
+                    android.util.Log.d("VpnConfig", "🔥 Parsed server: serverIp=${parsed.serverIp}, port=${parsed.port}")
+                    parsed
+                } else {
+                    android.util.Log.e("VpnConfig", "🔥 serverObj is null!")
+                    null
+                }
                 
                 val headersArray = obj.optJSONArray("httpHeaders")
                 val headers = if (headersArray != null) {
@@ -309,10 +319,10 @@ data class VpnConfig(
                     mtu = obj.optInt("mtu", 1500)
                 )
                 
-                android.util.Log.d("VpnConfig", "fromJson result: serverIp=${config.server?.serverIp}, port=${config.server?.port}, isValid=${config.isValid()}")
+                android.util.Log.d("VpnConfig", "🔥 Final config: serverIp=${config.server?.serverIp}, port=${config.server?.port}, isValid=${config.isValid()}")
                 config
             } catch (e: Exception) {
-                android.util.Log.e("VpnConfig", "fromJson failed: ${e.message}")
+                android.util.Log.e("VpnConfig", "🔥 fromJson failed: ${e.message}", e)
                 VpnConfig()
             }
         }
@@ -320,11 +330,39 @@ data class VpnConfig(
 
     fun toJson(): String {
         return JSONObject().apply {
-            put("server", server?.toJson())
+            // ✅ CRITICAL FIX: Include ALL fields for complete serialization
+            put("server", JSONObject().apply {
+                put("id", server?.id ?: "")
+                put("name", server?.name ?: "")
+                put("serverIp", server?.serverIp ?: "")
+                put("port", server?.port ?: 443)
+                put("protocol", server?.protocol ?: "TCP")
+                put("username", server?.username ?: "")
+                put("password", server?.password ?: "")
+            })
+            // Include httpHeaders array
+            val headersArray = org.json.JSONArray()
+            httpHeaders.forEach { header ->
+                headersArray.put(JSONObject().apply {
+                    put("name", header.name)
+                    put("value", header.value)
+                    put("enabled", header.enabled)
+                })
+            }
+            put("httpHeaders", headersArray)
+            // Include sniConfig
+            sniConfig?.let {
+                put("sniConfig", JSONObject().apply {
+                    put("serverName", it.serverName)
+                    put("enabled", it.enabled)
+                    put("allowOverride", it.allowOverride)
+                })
+            }
             put("autoConnect", autoConnect)
             put("killSwitch", killSwitch)
             put("dnsLeakProtection", dnsLeakProtection)
             put("ipv6Enabled", ipv6Enabled)
+            put("splitTunnelEnabled", splitTunnelEnabled)
             put("mtu", mtu)
         }.toString()
     }

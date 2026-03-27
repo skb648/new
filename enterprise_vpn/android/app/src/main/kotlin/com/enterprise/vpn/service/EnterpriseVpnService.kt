@@ -110,14 +110,19 @@ class EnterpriseVpnService : VpnService() {
         when (intent?.action) {
             ACTION_CONNECT -> {
                 val configJson = intent.getStringExtra("config")
-                Log.d(TAG, "Received config JSON: $configJson")
+                Log.d(TAG, "🔥 Received config JSON from intent: $configJson")
                 
                 if (configJson != null) {
                     val config = VpnConfig.fromJson(configJson)
-                    Log.d(TAG, "Parsed config from JSON: server=${config.server}, serverIp=${config.server?.serverIp}, port=${config.server?.port}")
+                    Log.d(TAG, "🔥 Parsed config from JSON:")
+                    Log.d(TAG, "🔥   server=${config.server}")
+                    Log.d(TAG, "🔥   server.serverIp=${config.server?.serverIp}")
+                    Log.d(TAG, "🔥   server.port=${config.server?.port}")
+                    Log.d(TAG, "🔥   server.protocol=${config.server?.protocol}")
+                    Log.d(TAG, "🔥   config.isValid=${config.isValid()}")
                     connect(config)
                 } else {
-                    Log.e(TAG, "No configuration provided in intent")
+                    Log.e(TAG, "🔥 No configuration provided in intent!")
                     sendError("No configuration provided")
                 }
             }

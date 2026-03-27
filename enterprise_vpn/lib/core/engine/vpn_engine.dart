@@ -395,10 +395,21 @@ class VpnEngine with ChangeNotifier {
 
   /// Connect to VPN with full configuration
   Future<ConnectionResult> connect(VpnConfig config) async {
+    // 🔥 CRITICAL DEBUG: Log incoming config
+    debugPrint('========================================');
+    debugPrint('🔥 VpnEngine.connect() CALLED');
+    debugPrint('🔥 config.isValid: ${config.isValid}');
+    debugPrint('🔥 config.server: ${config.server}');
+    debugPrint('🔥 config.server?.serverIp: "${config.server?.serverIp}"');
+    debugPrint('🔥 config.server?.port: ${config.server?.port}');
+    debugPrint('🔥 config.server?.protocol: ${config.server?.protocol}');
+    debugPrint('========================================');
+
     if (!config.isValid) {
+      debugPrint('🔥 VpnEngine.connect() - CONFIG INVALID, returning error');
       return ConnectionResult(
         success: false,
-        error: 'Invalid VPN configuration',
+        error: 'Invalid VPN configuration: server=${config.server}, serverIp=${config.server?.serverIp}, port=${config.server?.port}',
         errorCode: 'CONFIG_INVALID',
       );
     }
@@ -421,6 +432,16 @@ class VpnEngine with ChangeNotifier {
 
       // Prepare config map for native
       final configMap = _buildConfigMap(config);
+
+      // 🔥 CRITICAL DEBUG: Log what we're sending to native
+      debugPrint('========================================');
+      debugPrint('🔥 VpnEngine.connect() - SENDING TO NATIVE:');
+      debugPrint('🔥 configMap keys: ${configMap.keys}');
+      debugPrint('🔥 server map: ${configMap['server']}');
+      debugPrint('🔥 server.serverIp: ${(configMap['server'] as Map?)?['serverIp']}');
+      debugPrint('🔥 server.port: ${(configMap['server'] as Map?)?['port']}');
+      debugPrint('🔥 Full configMap: $configMap');
+      debugPrint('========================================');
 
       final result = await _methodChannel.invokeMethod<Map<dynamic, dynamic>>(
         methodConnect,
