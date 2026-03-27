@@ -273,16 +273,16 @@ data class VpnConfig(
                 val obj = JSONObject(json)
                 val serverObj = obj.optJSONObject("server")
                 
-                android.util.Log.d("VpnConfig", "🔥 fromJson() called")
-                android.util.Log.d("VpnConfig", "🔥 Raw JSON: $json")
-                android.util.Log.d("VpnConfig", "🔥 serverObj: $serverObj")
+                android.util.Log.d("VpnConfig", "fromJson() called")
+                android.util.Log.d("VpnConfig", "Raw JSON: $json")
+                android.util.Log.d("VpnConfig", "serverObj: $serverObj")
                 
                 val server = if (serverObj != null) {
                     val parsed = VpnServerConfig.fromJson(serverObj.toString())
-                    android.util.Log.d("VpnConfig", "🔥 Parsed server: serverIp=${parsed.serverIp}, port=${parsed.port}")
+                    android.util.Log.d("VpnConfig", "Parsed server: serverIp=${parsed.serverIp}, port=${parsed.port}")
                     parsed
                 } else {
-                    android.util.Log.e("VpnConfig", "🔥 serverObj is null!")
+                    android.util.Log.e("VpnConfig", "serverObj is null!")
                     null
                 }
                 
@@ -319,10 +319,10 @@ data class VpnConfig(
                     mtu = obj.optInt("mtu", 1500)
                 )
                 
-                android.util.Log.d("VpnConfig", "🔥 Final config: serverIp=${config.server?.serverIp}, port=${config.server?.port}, isValid=${config.isValid()}")
+                android.util.Log.d("VpnConfig", "Final config: serverIp=${config.server?.serverIp}, port=${config.server?.port}, isValid=${config.isValid()}")
                 config
             } catch (e: Exception) {
-                android.util.Log.e("VpnConfig", "🔥 fromJson failed: ${e.message}", e)
+                android.util.Log.e("VpnConfig", "fromJson failed: ${e.message}", e)
                 VpnConfig()
             }
         }
@@ -330,7 +330,7 @@ data class VpnConfig(
 
     fun toJson(): String {
         return JSONObject().apply {
-            // ✅ CRITICAL FIX: Include ALL fields for complete serialization
+            // CRITICAL: Include ALL fields for complete serialization
             put("server", JSONObject().apply {
                 put("id", server?.id ?: "")
                 put("name", server?.name ?: "")

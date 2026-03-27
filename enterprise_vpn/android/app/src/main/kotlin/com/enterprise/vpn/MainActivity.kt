@@ -2,6 +2,7 @@ package com.enterprise.vpn
 
 import android.app.Activity
 import android.content.Intent
+import android.net.VpnService
 import android.os.Bundle
 import android.util.Log
 import com.enterprise.vpn.service.EnterpriseVpnService
@@ -16,6 +17,8 @@ import io.flutter.plugin.common.MethodChannel
  * 
  * Entry point for the Flutter application.
  * Handles VPN permission requests and MethodChannel communication.
+ * 
+ * IMPORTANT: All VPN operations run on background threads to prevent ANR.
  */
 class MainActivity : FlutterActivity() {
     
@@ -79,13 +82,14 @@ class MainActivity : FlutterActivity() {
     }
     
     /**
-     * Request VPN permission with result callback
+     * Request VPN permission with result callback.
+     * This is called from Flutter via MethodChannel.
      */
     fun requestVpnPermission(result: MethodChannel.Result) {
         pendingMethodResult = result
         
         try {
-            val intent = android.net.VpnService.prepare(this)
+            val intent = VpnService.prepare(this)
             if (intent != null) {
                 Log.i(TAG, "Requesting VPN permission from user")
                 startActivityForResult(intent, VPN_PERMISSION_REQUEST)

@@ -39,6 +39,9 @@ import java.util.concurrent.atomic.AtomicReference
  * 
  * CRITICAL: This service implements socket protection to avoid routing loops.
  * All outbound sockets MUST be protected using protect() before connecting.
+ * 
+ * IMPORTANT: All network operations run on background threads (Dispatchers.IO)
+ * to prevent ANR (Application Not Responding) errors.
  */
 class EnterpriseVpnService : VpnService() {
 
@@ -78,6 +81,7 @@ class EnterpriseVpnService : VpnService() {
     private var proxyEngine: ProxyEngine? = null
     private var currentConfig: VpnConfig? = null
 
+    // Use Dispatchers.IO for all network operations to prevent ANR
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var isRunning = false
     private var connectJob: Job? = null
@@ -110,19 +114,19 @@ class EnterpriseVpnService : VpnService() {
         when (intent?.action) {
             ACTION_CONNECT -> {
                 val configJson = intent.getStringExtra("config")
-                Log.d(TAG, "🔥 Received config JSON from intent: $configJson")
+                Log.d(TAG, "Received config JSON from intent: $configJson")
                 
                 if (configJson != null) {
                     val config = VpnConfig.fromJson(configJson)
-                    Log.d(TAG, "🔥 Parsed config from JSON:")
-                    Log.d(TAG, "🔥   server=${config.server}")
-                    Log.d(TAG, "🔥   server.serverIp=${config.server?.serverIp}")
-                    Log.d(TAG, "🔥   server.port=${config.server?.port}")
-                    Log.d(TAG, "🔥   server.protocol=${config.server?.protocol}")
-                    Log.d(TAG, "🔥   config.isValid=${config.isValid()}")
+                    Log.d(TAG, "Parsed config from JSON:")
+                    Log.d(TAG, "  server=${config.server}")
+                    Log.d(TAG, "  server.serverIp=${config.server?.serverIp}")
+                    Log.d(TAG, "  server.port=${config.server?.port}")
+                    Log.d(TAG, "  server.protocol=${config.server?.protocol}")
+                    Log.d(TAG, "  config.isValid=${config.isValid()}")
                     connect(config)
                 } else {
-                    Log.e(TAG, "🔥 No configuration provided in intent!")
+                    Log.e(TAG, "No configuration provided in intent!")
                     sendError("No configuration provided")
                 }
             }
@@ -150,28 +154,42 @@ class EnterpriseVpnService : VpnService() {
 
         currentConfig = config
         connectJob?.cancel()
+        
+        // CRITICAL: Launch connection in background thread (Dispatchers.IO) to prevent ANR
         connectJob = serviceScope.launch {
             try {
                 performConnection(config)
             } catch (e: CancellationException) {
                 Log.i(TAG, "Connection cancelled")
-                updateState(VpnConnectionState.DISCONNECTED)
+                withContext(Dispatchers.Main) {
+                    updateState(VpnConnectionState.DISCONNECTED)
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Connection failed", e)
-                handleConnectionError(e)
+                withContext(Dispatchers.Main) {
+                    handleConnectionError(e)
+                }
             }
         }
     }
 
+    /**
+     * Perform the VPN connection on a background thread.
+     * This method runs on Dispatchers.IO to prevent ANR.
+     */
     private suspend fun performConnection(config: VpnConfig) {
-        updateState(VpnConnectionState.CONNECTING)
-        sendEvent(VpnEventType.CONNECTING, "Connecting to ${config.server?.serverIp}:${config.server?.port}")
+        // Update state to CONNECTING on main thread
+        withContext(Dispatchers.Main) {
+            updateState(VpnConnectionState.CONNECTING)
+            sendEvent(VpnEventType.CONNECTING, "Connecting to ${config.server?.serverIp}:${config.server?.port}")
+        }
 
+        // Check network availability (runs on IO dispatcher)
         if (!isNetworkAvailable()) {
             throw VpnConnectionException("No network connection available", "NO_NETWORK")
         }
 
-        // Test connection to server BEFORE establishing VPN
+        // Test connection to server BEFORE establishing VPN (runs on IO dispatcher)
         Log.i(TAG, "Testing server connection...")
         val serverReachable = testServerConnection(config)
         if (!serverReachable) {
@@ -199,95 +217,139 @@ class EnterpriseVpnService : VpnService() {
         proxyEngine?.start()
 
         isRunning = true
-        updateState(VpnConnectionState.CONNECTED)
-        sendEvent(VpnEventType.CONNECTED, "Connected to ${config.server?.name ?: config.server?.serverIp}")
+        
+        // Update state to CONNECTED on main thread
+        withContext(Dispatchers.Main) {
+            updateState(VpnConnectionState.CONNECTED)
+            sendEvent(VpnEventType.CONNECTED, "Connected to ${config.server?.name ?: config.server?.serverIp}")
+        }
 
         startForeground(NOTIFICATION_ID, createNotification("Connected to ${config.server?.name ?: "VPN"}"))
         startTrafficMonitoring()
     }
 
-    private suspend fun testServerConnection(config: VpnConfig): Boolean = withContext(Dispatchers.IO) {
-        val server = config.server ?: return@withContext false
+    /**
+     * Test server connection - runs entirely on background thread
+     */
+    private suspend fun testServerConnection(config: VpnConfig): Boolean {
+        val server = config.server ?: return false
         
-        when {
+        // Already running on Dispatchers.IO from serviceScope, no need for withContext
+        return when {
             server.protocol.equals("TCP", ignoreCase = true) -> testTcpConnection(server.serverIp, server.port)
             server.protocol.equals("UDP", ignoreCase = true) -> testUdpConnection(server.serverIp, server.port)
             else -> testTcpConnection(server.serverIp, server.port)
         }
     }
 
+    /**
+     * Test TCP connection with proper socket protection.
+     * 
+     * CRITICAL: Must follow this exact order:
+     * 1. Create Socket() (unconnected)
+     * 2. Call protect(socket) BEFORE any other operations
+     * 3. Then set socket options
+     * 4. Finally connect with timeout
+     */
     private fun testTcpConnection(serverIp: String, port: Int): Boolean {
-        var socket: Socket? = null
+        val socket = Socket()
         try {
-            socket = Socket()
+            Log.d(TAG, "======== testTcpConnection START ========")
+            Log.d(TAG, "Target: $serverIp:$port")
             
-            // CRITICAL: Protect the socket BEFORE connecting
-            if (!protect(socket)) {
-                val errorMsg = "PROTECT_FAILED: VPN protect() returned false for TCP test socket"
+            // =====================================================
+            // STEP 1: PROTECT THE SOCKET BEFORE ANY OTHER OPERATION
+            // This is CRITICAL - must be done before bind() or connect()
+            // =====================================================
+            Log.d(TAG, "Step 1: Calling protect(socket) on unconnected socket...")
+            val isProtected = protect(socket)
+            
+            if (!isProtected) {
+                val errorMsg = "[PROTECT_FAILED] VPN protect() returned false for TCP test socket. " +
+                    "Socket state: connected=${socket.isConnected}, bound=${socket.isBound}, closed=${socket.isClosed}"
                 Log.e(TAG, errorMsg)
                 sendDetailedError(errorMsg, "PROTECT_FAILED")
                 return false
             }
-            Log.d(TAG, "TCP test socket protected successfully")
-
-            socket.soTimeout = 10000
+            Log.i(TAG, "✅ Step 1 SUCCESS: Socket protected successfully")
+            
+            // =====================================================
+            // STEP 2: Set socket options AFTER protection
+            // =====================================================
+            Log.d(TAG, "Step 2: Setting socket options...")
+            socket.soTimeout = 10000  // 10 second read timeout
             socket.tcpNoDelay = true
             socket.keepAlive = true
-
+            socket.receiveBufferSize = 65536
+            socket.sendBufferSize = 65536
+            Log.i(TAG, "✅ Step 2 SUCCESS: Socket options set")
+            
+            // =====================================================
+            // STEP 3: Connect the socket with timeout
+            // =====================================================
+            Log.d(TAG, "Step 3: Connecting to $serverIp:$port with 10s timeout...")
             val address = InetSocketAddress(serverIp, port)
-            Log.d(TAG, "Attempting TCP connection to $serverIp:$port")
-            socket.connect(address, 10000)
-
-            Log.i(TAG, "TCP connection test successful: $serverIp:$port")
+            socket.connect(address, 10000)  // 10 second connection timeout
+            
+            Log.i(TAG, "✅ Step 3 SUCCESS: TCP connection established to $serverIp:$port")
+            Log.i(TAG, "======== testTcpConnection SUCCESS ========")
             return true
 
         } catch (e: UnknownHostException) {
-            val errorMsg = "DNS_ERROR [UnknownHostException]: Cannot resolve host '$serverIp' - ${e.message}"
+            val errorMsg = "[DNS_ERROR] Cannot resolve host '$serverIp' - ${e.message}"
             Log.e(TAG, errorMsg, e)
             sendDetailedError(errorMsg, "DNS_ERROR")
             return false
         } catch (e: ConnectException) {
-            val errorMsg = "CONNECTION_REFUSED [ConnectException]: Server at $serverIp:$port refused connection - ${e.message}. Is the server running and listening on this port?"
+            val errorMsg = "[CONNECTION_REFUSED] Server at $serverIp:$port refused connection - ${e.message}. " +
+                "Is the server running and listening on this port?"
             Log.e(TAG, errorMsg, e)
             sendDetailedError(errorMsg, "CONNECTION_REFUSED")
             return false
         } catch (e: SocketTimeoutException) {
-            val errorMsg = "CONNECTION_TIMEOUT [SocketTimeoutException]: Connection to $serverIp:$port timed out after 10 seconds - ${e.message}. Server may be offline or firewall blocking."
+            val errorMsg = "[CONNECTION_TIMEOUT] Connection to $serverIp:$port timed out after 10 seconds - ${e.message}. " +
+                "Server may be offline or firewall blocking."
             Log.e(TAG, errorMsg, e)
             sendDetailedError(errorMsg, "CONNECTION_TIMEOUT")
             return false
         } catch (e: java.net.NoRouteToHostException) {
-            val errorMsg = "NO_ROUTE [NoRouteToHostException]: No route to host $serverIp - Network unreachable: ${e.message}"
+            val errorMsg = "[NO_ROUTE] No route to host $serverIp - Network unreachable: ${e.message}"
             Log.e(TAG, errorMsg, e)
             sendDetailedError(errorMsg, "NO_ROUTE")
             return false
         } catch (e: java.nio.channels.UnresolvedAddressException) {
-            val errorMsg = "UNRESOLVED_ADDRESS [UnresolvedAddressException]: Cannot resolve address '$serverIp' - ${e.message}"
+            val errorMsg = "[UNRESOLVED_ADDRESS] Cannot resolve address '$serverIp' - ${e.message}"
             Log.e(TAG, errorMsg, e)
             sendDetailedError(errorMsg, "UNRESOLVED_ADDRESS")
             return false
         } catch (e: SecurityException) {
-            val errorMsg = "PERMISSION_DENIED [SecurityException]: Network permission denied - ${e.message}"
+            val errorMsg = "[PERMISSION_DENIED] Network permission denied - ${e.message}"
             Log.e(TAG, errorMsg, e)
             sendDetailedError(errorMsg, "PERMISSION_DENIED")
             return false
         } catch (e: IOException) {
-            val errorMsg = "IO_ERROR [IOException]: Network error connecting to $serverIp:$port - ${e.message}"
+            val errorMsg = "[IO_ERROR] Network error connecting to $serverIp:$port - ${e.message}"
             Log.e(TAG, errorMsg, e)
             sendDetailedError(errorMsg, "IO_ERROR")
             return false
         } catch (e: Exception) {
-            val errorMsg = "UNKNOWN_ERROR [${e.javaClass.simpleName}]: ${e.message}"
+            val errorMsg = "[UNKNOWN_ERROR] ${e.javaClass.simpleName}: ${e.message}"
             Log.e(TAG, errorMsg, e)
             sendDetailedError(errorMsg, "UNKNOWN_ERROR")
             return false
         } finally {
-            try { socket?.close() } catch (e: Exception) { }
+            try {
+                socket.close()
+                Log.d(TAG, "Test socket closed")
+            } catch (e: Exception) {
+                Log.w(TAG, "Error closing test socket: ${e.message}")
+            }
         }
     }
 
     /**
-     * Send detailed error to Flutter with full exception info
+     * Send detailed error to Flutter with full exception info.
+     * This method ensures the error is sent on the main thread.
      */
     private fun sendDetailedError(message: String, code: String) {
         try {
@@ -301,61 +363,71 @@ class EnterpriseVpnService : VpnService() {
                 )
             )
             _eventFlow.value = event
-            Log.e(TAG, "🔥 DETAILED ERROR SENT TO FLUTTER: [$code] $message")
+            Log.e(TAG, "🔥 ERROR SENT TO FLUTTER: [$code] $message")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to send error to Flutter: ${e.message}")
         }
     }
 
+    /**
+     * Test UDP connection with proper socket protection.
+     */
     private fun testUdpConnection(serverIp: String, port: Int): Boolean {
         var channel: DatagramChannel? = null
         try {
+            Log.d(TAG, "======== testUdpConnection START ========")
+            Log.d(TAG, "Target: $serverIp:$port")
+            
             channel = DatagramChannel.open()
             
+            // CRITICAL: Protect BEFORE connecting
+            Log.d(TAG, "Step 1: Calling protect(socket) on unconnected UDP channel...")
             if (!protect(channel.socket())) {
-                val errorMsg = "PROTECT_FAILED: VPN protect() returned false for UDP test socket"
+                val errorMsg = "[PROTECT_FAILED] VPN protect() returned false for UDP test socket"
                 Log.e(TAG, errorMsg)
                 sendDetailedError(errorMsg, "PROTECT_FAILED")
                 return false
             }
-            Log.d(TAG, "UDP test socket protected successfully")
+            Log.i(TAG, "✅ Step 1 SUCCESS: UDP socket protected successfully")
 
             val address = InetSocketAddress(serverIp, port)
             channel.connect(address)
 
+            // Send a test packet
             val buffer = ByteBuffer.wrap(byteArrayOf(0))
             channel.send(buffer, address)
 
-            Log.i(TAG, "UDP connection test successful: $serverIp:$port")
+            Log.i(TAG, "✅ UDP connection test successful: $serverIp:$port")
+            Log.i(TAG, "======== testUdpConnection SUCCESS ========")
             return true
 
         } catch (e: UnknownHostException) {
-            val errorMsg = "DNS_ERROR [UnknownHostException]: Cannot resolve host '$serverIp' - ${e.message}"
+            val errorMsg = "[DNS_ERROR] Cannot resolve host '$serverIp' - ${e.message}"
             Log.e(TAG, errorMsg, e)
             sendDetailedError(errorMsg, "DNS_ERROR")
             return false
         } catch (e: java.net.NoRouteToHostException) {
-            val errorMsg = "NO_ROUTE [NoRouteToHostException]: No route to host $serverIp - ${e.message}"
+            val errorMsg = "[NO_ROUTE] No route to host $serverIp - ${e.message}"
             Log.e(TAG, errorMsg, e)
             sendDetailedError(errorMsg, "NO_ROUTE")
             return false
         } catch (e: java.nio.channels.UnresolvedAddressException) {
-            val errorMsg = "UNRESOLVED_ADDRESS [UnresolvedAddressException]: Cannot resolve address '$serverIp' - ${e.message}"
+            val errorMsg = "[UNRESOLVED_ADDRESS] Cannot resolve address '$serverIp' - ${e.message}"
             Log.e(TAG, errorMsg, e)
             sendDetailedError(errorMsg, "UNRESOLVED_ADDRESS")
             return false
         } catch (e: SecurityException) {
-            val errorMsg = "PERMISSION_DENIED [SecurityException]: Network permission denied - ${e.message}"
+            val errorMsg = "[PERMISSION_DENIED] Network permission denied - ${e.message}"
             Log.e(TAG, errorMsg, e)
             sendDetailedError(errorMsg, "PERMISSION_DENIED")
             return false
         } catch (e: IOException) {
-            val errorMsg = "IO_ERROR [IOException]: Network error connecting to $serverIp:$port - ${e.message}"
+            val errorMsg = "[IO_ERROR] Network error connecting to $serverIp:$port - ${e.message}"
             Log.e(TAG, errorMsg, e)
             sendDetailedError(errorMsg, "IO_ERROR")
             return false
         } catch (e: Exception) {
-            val errorMsg = "UNKNOWN_ERROR [${e.javaClass.simpleName}]: ${e.message}"
+            val errorMsg = "[UNKNOWN_ERROR] ${e.javaClass.simpleName}: ${e.message}"
             Log.e(TAG, errorMsg, e)
             sendDetailedError(errorMsg, "UNKNOWN_ERROR")
             return false
@@ -364,58 +436,115 @@ class EnterpriseVpnService : VpnService() {
         }
     }
 
+    /**
+     * Create a protected TCP channel for the proxy engine.
+     * 
+     * CRITICAL: Must protect BEFORE connecting.
+     */
     fun createProtectedTcpChannel(serverIp: String, port: Int, timeoutMs: Int = 30000): SocketChannel? {
         return try {
+            Log.d(TAG, "======== createProtectedTcpChannel START ========")
+            Log.d(TAG, "Target: $serverIp:$port, timeout: ${timeoutMs}ms")
+            
             val channel = SocketChannel.open()
             channel.configureBlocking(true)
             
-            if (!protect(channel.socket())) {
-                Log.e(TAG, "Failed to protect TCP channel for $serverIp:$port")
+            // CRITICAL STEP 1: PROTECT BEFORE ANY OTHER OPERATION
+            Log.d(TAG, "Step 1: Calling protect() on unconnected channel...")
+            val socket = channel.socket()
+            val isProtected = protect(socket)
+            
+            if (!isProtected) {
+                val errorMsg = "[PROTECT_FAILED] VPN protect() returned false for TCP channel. " +
+                    "Socket state: connected=${socket.isConnected}, bound=${socket.isBound}, closed=${socket.isClosed}"
+                Log.e(TAG, errorMsg)
+                sendDetailedError(errorMsg, "PROTECT_FAILED")
                 channel.close()
                 return null
             }
-            Log.d(TAG, "TCP channel protected: $serverIp:$port")
-
-            channel.socket().soTimeout = timeoutMs
-            channel.socket().tcpNoDelay = true
-            channel.socket().keepAlive = true
-
+            Log.i(TAG, "✅ Step 1 SUCCESS: TCP channel protected")
+            
+            // STEP 2: Set socket options
+            Log.d(TAG, "Step 2: Setting socket options...")
+            socket.soTimeout = timeoutMs
+            socket.tcpNoDelay = true
+            socket.keepAlive = true
+            socket.receiveBufferSize = 65536
+            socket.sendBufferSize = 65536
+            Log.i(TAG, "✅ Step 2 SUCCESS: Socket options set")
+            
+            // STEP 3: Connect with timeout
+            Log.d(TAG, "Step 3: Connecting to $serverIp:$port with ${timeoutMs}ms timeout...")
             val address = InetSocketAddress(serverIp, port)
             channel.socket().connect(address, timeoutMs)
 
             if (channel.isConnected) {
-                Log.i(TAG, "Protected TCP channel connected: $serverIp:$port")
+                Log.i(TAG, "✅ Step 3 SUCCESS: Protected TCP channel connected: $serverIp:$port")
+                Log.i(TAG, "======== createProtectedTcpChannel SUCCESS ========")
                 channel
             } else {
-                Log.e(TAG, "Protected TCP channel not connected: $serverIp:$port")
+                val errorMsg = "[CONNECTION_FAILED] TCP channel not connected after connect() call"
+                Log.e(TAG, errorMsg)
+                sendDetailedError(errorMsg, "CONNECTION_FAILED")
                 channel.close()
                 null
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to create protected TCP channel: ${e.message}", e)
+            val errorMsg = "[${getErrorCode(e)}] Failed to create protected TCP channel: ${e.message}"
+            Log.e(TAG, errorMsg, e)
+            sendDetailedError(errorMsg, getErrorCode(e))
             null
         }
     }
 
+    /**
+     * Create a protected UDP channel for the proxy engine.
+     */
     fun createProtectedUdpChannel(serverIp: String, port: Int): DatagramChannel? {
         return try {
+            Log.d(TAG, "======== createProtectedUdpChannel START ========")
+            Log.d(TAG, "Target: $serverIp:$port")
+            
             val channel = DatagramChannel.open()
             
+            // CRITICAL: PROTECT BEFORE CONNECTING
+            Log.d(TAG, "Step 1: Calling protect() on unconnected UDP channel...")
             if (!protect(channel.socket())) {
-                Log.e(TAG, "Failed to protect UDP channel for $serverIp:$port")
+                val errorMsg = "[PROTECT_FAILED] VPN protect() returned false for UDP channel"
+                Log.e(TAG, errorMsg)
+                sendDetailedError(errorMsg, "PROTECT_FAILED")
                 channel.close()
                 return null
             }
-            Log.d(TAG, "UDP channel protected: $serverIp:$port")
+            Log.i(TAG, "✅ Step 1 SUCCESS: UDP channel protected")
 
             val address = InetSocketAddress(serverIp, port)
             channel.connect(address)
 
-            Log.i(TAG, "Protected UDP channel created: $serverIp:$port")
+            Log.i(TAG, "✅ Protected UDP channel created: $serverIp:$port")
+            Log.i(TAG, "======== createProtectedUdpChannel SUCCESS ========")
             channel
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to create protected UDP channel: ${e.message}", e)
+            val errorMsg = "[${getErrorCode(e)}] Failed to create protected UDP channel: ${e.message}"
+            Log.e(TAG, errorMsg, e)
+            sendDetailedError(errorMsg, getErrorCode(e))
             null
+        }
+    }
+
+    /**
+     * Get error code from exception type
+     */
+    private fun getErrorCode(e: Exception): String {
+        return when (e) {
+            is UnknownHostException -> "DNS_ERROR"
+            is ConnectException -> "CONNECTION_REFUSED"
+            is SocketTimeoutException -> "CONNECTION_TIMEOUT"
+            is java.net.NoRouteToHostException -> "NO_ROUTE"
+            is java.nio.channels.UnresolvedAddressException -> "UNRESOLVED_ADDRESS"
+            is SecurityException -> "PERMISSION_DENIED"
+            is IOException -> "IO_ERROR"
+            else -> "UNKNOWN_ERROR"
         }
     }
 
@@ -446,16 +575,8 @@ class EnterpriseVpnService : VpnService() {
             // =====================================================
             // CRITICAL FIX: VPN ROUTING LOOP PREVENTION
             // =====================================================
-            // This is the "Nuclear Fix" for Android VpnService routing loops.
             // By disallowing our own app from the VPN, all sockets created by
-            // this app (including outbound connections to the VPN server)
-            // will bypass the tun0 interface and use the original network.
-            //
-            // This PREVENTS the infinite loop where:
-            // 1. App creates socket to connect to VPN server
-            // 2. Socket traffic gets routed into tun0 (VPN interface)
-            // 3. VPN tries to forward it, creating more traffic
-            // 4. Infinite loop -> Connection fails instantly
+            // this app will bypass the tun0 interface and use the original network.
             // =====================================================
             try {
                 builder.addDisallowedApplication(this.packageName)
@@ -466,8 +587,6 @@ class EnterpriseVpnService : VpnService() {
 
             // Split tunnel: allow only specific apps through VPN
             if (config.splitTunnelEnabled && config.excludedApps.isNotEmpty()) {
-                // Note: When using addDisallowedApplication, we don't use addAllowedApplication
-                // as they are mutually exclusive approaches
                 Log.i(TAG, "Split tunnel enabled with ${config.excludedApps.size} excluded apps")
             }
 
